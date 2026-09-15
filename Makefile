@@ -27,8 +27,12 @@ build/main.o: src/main.c
 	mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 
-build/boot.so: build/main.o build/boot.raw.o
-	$(LD) $(LDFLAGS) build/main.o build/boot.raw.o -o $@ -lefi -lgnuefi
+build/network.o: src/network.c
+	mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/boot.so: build/main.o build/network.o build/boot.raw.o
+	$(LD) $(LDFLAGS) build/main.o build/network.o build/boot.raw.o -o $@ -lefi -lgnuefi
 
 build/BOOTX64.EFI: build/boot.so
 	$(OBJCOPY) $(OBJCOPY_FLAGS) $< $@
