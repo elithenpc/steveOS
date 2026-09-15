@@ -2,8 +2,9 @@ CC ?= gcc
 LD ?= ld
 OBJCOPY ?= objcopy
 
-# Debian/Ubuntu install GNU-EFI's x86_64 files in the multiarch lib directory.
-GNU_EFI_LIBDIR ?= /usr/lib/$(shell dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null || echo x86_64-linux-gnu)
+# Find GNU-EFI's x86_64 linker script and startup object on Debian/Ubuntu.
+GNU_EFI_LIBDIR ?= $(shell dirname "$$(dpkg -L gnu-efi 2>/dev/null | grep '/elf_x86_64_efi\.lds$$' | head -n1)")
+GNU_EFI_LIBDIR := $(if $(GNU_EFI_LIBDIR),$(GNU_EFI_LIBDIR),/usr/lib)
 
 CFLAGS := -I/usr/include/efi -I/usr/include/efi/x86_64 \
           -fpic -ffreestanding -fno-stack-protector -fno-stack-check \
@@ -27,7 +28,7 @@ build/main.o: src/main.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 build/boot.so: build/main.o build/boot.raw.o
-	$(LD) $(LDFLAGS) build/main.o build/boot.raw.o -o $@ -lefi
+	$(LD) $(LDFLAGS) build/main.o build/boot.raw.o -o $@ -lefi -lgnuefi
 
 build/BOOTX64.EFI: build/boot.so
 	$(OBJCOPY) $(OBJCOPY_FLAGS) $< $@
