@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include "../src/bootinfo.h"
 
 extern void native_default_isr(void);
 
@@ -29,6 +30,7 @@ static uint64_t gdt[3] __attribute__((aligned(8))) = {
 };
 
 static IDT_GATE idt[256] __attribute__((aligned(16)));
+static uint64_t page_tables[1024] __attribute__((aligned(4096))) = {0};
 
 static void load_gdt(void) {
     GDTR gdtr = { (uint16_t)(sizeof(gdt) - 1), (uint64_t)gdt };
@@ -67,6 +69,24 @@ void native_idt_init(void) {
 
     IDTR idtr = { (uint16_t)(sizeof(idt) - 1), (uint64_t)idt };
     __asm__ __volatile__("lidt %0" : : "m"(idtr));
+}
+
+void native_paging_init(const STEVEOS_BOOT_INFO *boot) {
+    for (int i = 0; i < 512; ++i) {
+        page_tables[i] = 0;
+        page_tables[512 + i] = ((uint64_t)i << 30) | 0x83ULL;
+    }
+
+    uintptr_t pml4 = (uintptr_t)&page_tables[0];
+    uintptr_t pdpt = (uintptr_t)&page_tables[512];
+    uintptr_t offset = (uintptr_t)&page_tables[0];
+    if (boot)
+        pml4 = boot->kernel_base + offset;
+    if (boot)
+        pdpt = boot->kernel_base + ((uintptr_t)&page_tables[512] - (uintptr_t)&page_tables[0]);
+
+    page_tables[0] = (uint64_t)pdpt | 0x03ULL;
+    __asm__ __volatile__("mov %0, %%cr3" : : "r"(pml4) : "memory");
 }
 
 static inline uint8_t inb(uint16_t port) {
