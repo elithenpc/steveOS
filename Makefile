@@ -3,7 +3,7 @@ LD ?= ld
 OBJCOPY ?= objcopy
 
 # Find GNU-EFI's x86_64 linker script and startup object on Debian/Ubuntu.
-GNU_EFI_LIBDIR ?= $(shell dirname "$(shell dpkg -L gnu-efi 2>/dev/null | grep '/elf_x86_64_efi\.lds$$' | head -n1)")
+GNU_EFI_LIBDIR ?= $(shell dirname "$$(dpkg -L gnu-efi 2>/dev/null | grep '/elf_x86_64_efi\.lds$$' | head -n1)")
 GNU_EFI_LIBDIR := $(if $(GNU_EFI_LIBDIR),$(GNU_EFI_LIBDIR),/usr/lib)
 
 CFLAGS := -I/usr/include/efi -I/usr/include/efi/x86_64 \
