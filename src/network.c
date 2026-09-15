@@ -35,16 +35,12 @@ EFI_STATUS steveos_network_available(void) {
     EFI_STATUS status = network_start();
     if (EFI_ERROR(status))
         return status;
-
     network_stop();
     return EFI_SUCCESS;
 }
 
+/* Compatibility entry point used by the current desktop. This reports NIC
+ * availability rather than pretending that HTTP is already implemented. */
 EFI_STATUS steveos_http_test(void) {
-    EFI_STATUS status = steveos_network_available();
-    if (EFI_ERROR(status))
-        return status;
-
-    /* TCP/IP, DNS and HTTP will be owned by the native steveOS network stack. */
-    return EFI_UNSUPPORTED;
+    return steveos_network_available();
 }
