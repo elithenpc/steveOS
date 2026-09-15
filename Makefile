@@ -2,13 +2,14 @@ CC ?= gcc
 LD ?= ld
 OBJCOPY ?= objcopy
 
-# Find GNU-EFI's x86_64 linker script and startup object on Debian/Ubuntu.
 GNU_EFI_LIBDIR ?= $(shell dirname "$$(dpkg -L gnu-efi 2>/dev/null | grep '/elf_x86_64_efi\.lds$$' | head -n1)")
 GNU_EFI_LIBDIR := $(if $(GNU_EFI_LIBDIR),$(GNU_EFI_LIBDIR),/usr/lib)
 
 CFLAGS := -I/usr/include/efi -I/usr/include/efi/x86_64 \
           -fpic -ffreestanding -fno-stack-protector -fno-stack-check \
           -fshort-wchar -mno-red-zone -maccumulate-outgoing-args
+KERNEL_CFLAGS := -ffreestanding -fno-stack-protector -fno-stack-check -fno-pie -fno-pic \
+                 -mno-red-zone -mcmodel=small -Wall -Wextra -I.
 LDFLAGS := -nostdlib -znocombreloc -T $(GNU_EFI_LIBDIR)/elf_x86_64_efi.lds \
            -shared -Bsymbolic -L$(GNU_EFI_LIBDIR) $(GNU_EFI_LIBDIR)/crt0-efi-x86_64.o
 OBJCOPY_FLAGS := -j .text -j .sdata -j .data -j .dynamic -j .dynsym \
@@ -26,7 +27,7 @@ build/boot.raw.o: build/boot.raw
 	$(OBJCOPY) --input-target=binary --output-target=elf64-x86-64 \
 		--binary-architecture=i386:x86-64 build/boot.raw build/boot.raw.o
 
-build/main.o: src/main.c src/shell.h src/bootlog.h
+build/main.o: src/main.c src/shell.h src/bootlog.h src/kernel.h
 	mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 
@@ -58,7 +59,7 @@ build/installer.o: src/installer.c src/installer.h src/fs.h
 	mkdir -p build
 	$(CC) $(CFLAGS) -c src/installer.c -o $@
 
-build/kernel.o: src/kernel.c src/kernel.h src/memory.h
+build/kernel.o: src/kernel.c src/kernel.h src/bootinfo.h
 	mkdir -p build
 	$(CC) $(CFLAGS) -c src/kernel.c -o $@
 
@@ -70,8 +71,30 @@ build/tasks.o: src/tasks.c src/tasks.h
 	mkdir -p build
 	$(CC) $(CFLAGS) -c src/tasks.c -o $@
 
-build/boot.so: build/main.o build/boot.raw.o $(CORE_OBJS)
-	$(LD) $(LDFLAGS) build/main.o build/boot.raw.o $(CORE_OBJS) -o $@ -lefi -lgnuefi
+build/native-kernel-entry.o: kernel/entry.S
+	mkdir -p build
+	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
+
+build/native-kernel-arch.o: kernel/arch.c src/bootinfo.h
+	mkdir -p build
+	$(CC) $(KERNEL_CFLAGS) -c kernel/arch.c -o $@
+
+build/native-kernel-main.o: kernel/main.c src/bootinfo.h build/boot.raw.o
+	mkdir -p build
+	$(CC) $(KERNEL_CFLAGS) -c kernel/main.c -o $@
+
+build/native_kernel.elf: build/native-kernel-entry.o build/native-kernel-main.o build/native-kernel-arch.o build/boot.raw.o
+	$(LD) -T kernel/linker.ld -o $@ $^
+
+build/native_kernel.raw: build/native_kernel.elf
+	$(OBJCOPY) -O binary $< $@
+
+build/native_kernel_raw.o: build/native_kernel.raw
+	$(OBJCOPY) --input-target=binary --output-target=elf64-x86-64 \
+		--binary-architecture=i386:x86-64 build/native_kernel.raw build/native_kernel_raw.o
+
+build/boot.so: build/main.o build/boot.raw.o build/native_kernel_raw.o $(CORE_OBJS)
+	$(LD) $(LDFLAGS) build/main.o build/boot.raw.o build/native_kernel_raw.o $(CORE_OBJS) -o $@ -lefi -lgnuefi
 
 build/BOOTX64.EFI: build/boot.so
 	$(OBJCOPY) $(OBJCOPY_FLAGS) $< $@
