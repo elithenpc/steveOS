@@ -1,5 +1,6 @@
 .section .text
 .global _start
+.global native_default_isr
 .extern native_gdt_init
 .extern native_paging_init
 .extern native_idt_init
@@ -27,3 +28,11 @@ _start:
     cli
     hlt
     jmp 1b
+
+/* Native exception/interrupt safety net. We deliberately halt rather than
+ * returning through a possibly corrupt exception frame. */
+native_default_isr:
+    cli
+2:
+    hlt
+    jmp 2b
