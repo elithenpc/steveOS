@@ -15,6 +15,10 @@ typedef struct {
 } SCREEN;
 
 static SCREEN screen;
+static EFI_SIMPLE_POINTER_PROTOCOL *mouse = NULL;
+static int mouse_x;
+static int mouse_y;
+static int mouse_left_down;
 
 static uint32_t read_u32(const unsigned char *p) {
     return ((uint32_t)p[0]) | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
@@ -73,12 +77,10 @@ static void draw_char(int x, int y, char c, int scale, uint32_t colour) {
     if (c == ' ') return;
     if (c < 'A' || c > 'Z') return;
     int index = c - 'A';
-    for (int row = 0; row < 7; row++) {
-        for (int col = 0; col < 5; col++) {
+    for (int row = 0; row < 7; row++)
+        for (int col = 0; col < 5; col++)
             if (font[index][row] & (1 << (4 - col)))
                 fill_rect(x + col * scale, y + row * scale, scale, scale, colour);
-        }
-    }
 }
 
 static void draw_text(int x, int y, const char *text, int scale, uint32_t colour) {
@@ -118,6 +120,23 @@ static void draw_image(void) {
                 b = p[0]; g = p[1]; r = p[2];
             }
             put_pixel((int)x, (int)y, pack_pixel(screen.format, screen.mask, r, g, b));
+        }
+    }
+}
+
+static void draw_cursor(void) {
+    uint32_t white = pack_pixel(screen.format, screen.mask, 255, 255, 255);
+    uint32_t black = pack_pixel(screen.format, screen.mask, 0, 0, 0);
+
+    /* Simple arrow cursor with a black outline. */
+    for (int i = 0; i < 18; i++) {
+        put_pixel(mouse_x + i, mouse_y + i, black);
+        if (i < 12) put_pixel(mouse_x + i + 1, mouse_y + i, white);
+    }
+    for (int i = 0; i < 11; i++) {
+        for (int j = 0; j <= i / 2; j++) {
+            put_pixel(mouse_x + j, mouse_y + i, white);
+            put_pixel(mouse_x + j + 1, mouse_y + i, black);
         }
     }
 }
@@ -164,6 +183,60 @@ static void draw_start_menu(int selected) {
 static void redraw(int start_open, int selected) {
     draw_desktop();
     if (start_open) draw_start_menu(selected);
+    draw_cursor();
+}
+
+static int point_in_rect(int px, int py, int x, int y, int w, int h) {
+    return px >= x && px < x + w && py >= y && py < y + h;
+}
+
+static void handle_mouse(int start_open, int *selected, int *show_image) {
+    if (!mouse) return;
+
+    EFI_SIMPLE_POINTER_STATE state;
+    EFI_STATUS status = uefi_call_wrapper(mouse->GetState, 2, mouse, &state);
+    if (EFI_ERROR(status)) return;
+
+    int old_x = mouse_x;
+    int old_y = mouse_y;
+
+    int dx = (int)state.RelativeMovementX;
+    int dy = (int)state.RelativeMovementY;
+    if (dx > 0) dx = (dx + 1) / 2;
+    else if (dx < 0) dx = (dx - 1) / 2;
+    if (dy > 0) dy = (dy + 1) / 2;
+    else if (dy < 0) dy = (dy - 1) / 2;
+
+    mouse_x += dx;
+    mouse_y += dy;
+    if (mouse_x < 0) mouse_x = 0;
+    if (mouse_y < 0) mouse_y = 0;
+    if (mouse_x >= (int)screen.w) mouse_x = (int)screen.w - 1;
+    if (mouse_y >= (int)screen.h) mouse_y = (int)screen.h - 1;
+
+    int clicked = state.LeftButton && !mouse_left_down;
+    mouse_left_down = state.LeftButton;
+
+    if (!clicked && old_x == mouse_x && old_y == mouse_y) return;
+
+    if (clicked) {
+        int start_y = (int)screen.h - 52;
+        if (point_in_rect(mouse_x, mouse_y, 12, start_y, 150, 40)) {
+            start_open = !start_open;
+            *selected = 0;
+        } else if (start_open) {
+            int menu_x = 12;
+            int menu_y = (int)screen.h - 64 - 200 - 8;
+            if (point_in_rect(mouse_x, mouse_y, menu_x + 14, menu_y + 72, 332, 48)) {
+                *show_image = 1;
+                start_open = 0;
+            } else if (point_in_rect(mouse_x, mouse_y, menu_x + 14, menu_y + 126, 332, 48)) {
+                /* Shutdown is intentionally a placeholder for now. */
+            }
+        }
+    }
+
+    redraw(start_open, *selected);
 }
 
 EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_table) {
@@ -196,16 +269,53 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_tab
     screen.mask = gop->Mode->Info->PixelInformation;
     screen.fb = (uint32_t *)(UINTN)gop->Mode->FrameBufferBase;
 
+    /* Try to locate a firmware mouse/touchpad. */
+    uefi_call_wrapper(BS->LocateProtocol, 3,
+                      &gEfiSimplePointerProtocolGuid, NULL, (void **)&mouse);
+    if (mouse) uefi_call_wrapper(mouse->Reset, 2, mouse, FALSE);
+
+    mouse_x = (int)screen.w / 2;
+    mouse_y = (int)screen.h / 2;
+    mouse_left_down = 0;
+
+    EFI_EVENT timer_event;
+    status = uefi_call_wrapper(BS->CreateEvent, 5, EVT_TIMER, TPL_CALLBACK, NULL, NULL, &timer_event);
+    if (EFI_ERROR(status)) return status;
+    uefi_call_wrapper(BS->SetTimer, 3, timer_event, TimerPeriodic, 160000);
+
+    EFI_EVENT events[2];
+    events[0] = ST->ConIn->WaitForKey;
+    events[1] = timer_event;
+
     EFI_INPUT_KEY key;
     int start_open = 0;
     int selected = 0;
-    redraw(start_open, selected);
+    int show_image = 0;
+    redraw(0, 0);
 
     while (1) {
-        status = uefi_call_wrapper(BS->WaitForEvent, 3, 1, &ST->ConIn->WaitForKey, NULL);
+        UINTN event_index = 0;
+        status = uefi_call_wrapper(BS->WaitForEvent, 3, 2, events, &event_index);
         if (EFI_ERROR(status)) continue;
+
+        if (event_index == 1) {
+            if (show_image) continue;
+            handle_mouse(start_open, &selected, &show_image);
+            if (show_image) {
+                draw_image();
+                draw_cursor();
+            }
+            continue;
+        }
+
         status = uefi_call_wrapper(ST->ConIn->ReadKeyStroke, 2, ST->ConIn, &key);
         if (EFI_ERROR(status)) continue;
+
+        if (show_image) {
+            show_image = 0;
+            redraw(0, 0);
+            continue;
+        }
 
         if (key.UnicodeChar == 's' || key.UnicodeChar == 'S') {
             start_open = !start_open;
@@ -228,14 +338,8 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_tab
         } else if (key.UnicodeChar == CHAR_CARRIAGE_RETURN || key.UnicodeChar == ' ') {
             if (selected == 0) {
                 draw_image();
-                start_open = 0;
-                while (1) {
-                    status = uefi_call_wrapper(BS->WaitForEvent, 3, 1, &ST->ConIn->WaitForKey, NULL);
-                    if (EFI_ERROR(status)) continue;
-                    status = uefi_call_wrapper(ST->ConIn->ReadKeyStroke, 2, ST->ConIn, &key);
-                    if (!EFI_ERROR(status)) break;
-                }
-                redraw(0, 0);
+                draw_cursor();
+                show_image = 1;
             }
         }
     }
