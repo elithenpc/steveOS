@@ -79,11 +79,12 @@ void native_paging_init(const STEVEOS_BOOT_INFO *boot) {
 
     uintptr_t pml4 = (uintptr_t)&page_tables[0];
     uintptr_t pdpt = (uintptr_t)&page_tables[512];
-    uintptr_t offset = (uintptr_t)&page_tables[0];
-    if (boot)
-        pml4 = boot->kernel_base + offset;
-    if (boot)
-        pdpt = boot->kernel_base + ((uintptr_t)&page_tables[512] - (uintptr_t)&page_tables[0]);
+    if (boot) {
+        uintptr_t image_base = (uintptr_t)boot->kernel_base;
+        uintptr_t local_base = (uintptr_t)&page_tables[0];
+        pml4 = image_base + (local_base - image_base);
+        pdpt = pml4 + ((uintptr_t)&page_tables[512] - local_base);
+    }
 
     page_tables[0] = (uint64_t)pdpt | 0x03ULL;
     __asm__ __volatile__("mov %0, %%cr3" : : "r"(pml4) : "memory");
@@ -99,10 +100,106 @@ static inline void outb(uint16_t port, uint8_t value) {
     __asm__ __volatile__("outb %0, %1" : : "a"(value), "Nd"(port));
 }
 
+static void io_wait(void) {
+    outb(0x80, 0);
+}
+
+static int wait_input_clear(void) {
+    for (uint32_t i = 0; i < 100000; ++i) {
+        if (!(inb(0x64) & 2)) return 1;
+        io_wait();
+    }
+    return 0;
+}
+
+static int wait_output_full(void) {
+    for (uint32_t i = 0; i < 100000; ++i) {
+        if (inb(0x64) & 1) return 1;
+        io_wait();
+    }
+    return 0;
+}
+
+static int ps2_read_byte(uint8_t *value) {
+    if (!wait_output_full()) return 0;
+    *value = inb(0x60);
+    return 1;
+}
+
+static int ps2_send_mouse(uint8_t command) {
+    if (!wait_input_clear()) return 0;
+    outb(0x64, 0xD4);
+    if (!wait_input_clear()) return 0;
+    outb(0x60, command);
+    uint8_t ack = 0;
+    return ps2_read_byte(&ack) && ack == 0xFA;
+}
+
+int native_mouse_init(void) {
+    uint8_t status;
+    if (!wait_input_clear()) return 0;
+    outb(0x64, 0xA8);
+
+    if (!wait_input_clear()) return 0;
+    outb(0x64, 0x20);
+    if (!ps2_read_byte(&status)) return 0;
+
+    status |= 0x02;
+    status &= (uint8_t)~0x20;
+    if (!wait_input_clear()) return 0;
+    outb(0x64, 0x60);
+    if (!wait_input_clear()) return 0;
+    outb(0x60, status);
+
+    ps2_send_mouse(0xF6);
+    ps2_send_mouse(0xF4);
+    return 1;
+}
+
+int native_mouse_read_packet(int8_t *dx, int8_t *dy, uint8_t *buttons) {
+    static uint8_t packet[3];
+    static uint8_t index;
+    static uint8_t button_state;
+
+    while (inb(0x64) & 1) {
+        uint8_t status = inb(0x64);
+        uint8_t value = inb(0x60);
+        if (!(status & 0x20))
+            continue;
+
+        if (index == 0) {
+            if (!(value & 0x08))
+                continue;
+            packet[0] = value;
+            index = 1;
+            continue;
+        }
+
+        packet[index++] = value;
+        if (index < 3)
+            continue;
+
+        index = 0;
+        if ((packet[0] & 0xC0) != 0)
+            continue;
+
+        button_state = packet[0] & 0x07;
+        *dx = (int8_t)packet[1];
+        *dy = -(int8_t)packet[2];
+        *buttons = button_state;
+        return 1;
+    }
+    return 0;
+}
+
 uint8_t native_keyboard_read_scancode(void) {
-    if (!(inb(0x64) & 1))
-        return 0;
-    return inb(0x60);
+    while (inb(0x64) & 1) {
+        uint8_t status = inb(0x64);
+        uint8_t value = inb(0x60);
+        if (!(status & 0x20))
+            return value;
+    }
+    return 0;
 }
 
 void native_reboot(void) {
