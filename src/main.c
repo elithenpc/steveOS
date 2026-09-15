@@ -128,7 +128,6 @@ static void draw_cursor(void) {
     uint32_t white = pack_pixel(screen.format, screen.mask, 255, 255, 255);
     uint32_t black = pack_pixel(screen.format, screen.mask, 0, 0, 0);
 
-    /* Simple arrow cursor with a black outline. */
     for (int i = 0; i < 18; i++) {
         put_pixel(mouse_x + i, mouse_y + i, black);
         if (i < 12) put_pixel(mouse_x + i + 1, mouse_y + i, white);
@@ -157,8 +156,8 @@ static void draw_desktop(void) {
 }
 
 static void draw_start_menu(int selected) {
-    int menu_w = 360;
-    int menu_h = 200;
+    int menu_w = 430;
+    int menu_h = 290;
     int x = 12;
     int y = (int)screen.h - 64 - menu_h - 8;
     uint32_t panel = pack_pixel(screen.format, screen.mask, 30, 36, 50);
@@ -177,12 +176,54 @@ static void draw_start_menu(int selected) {
     draw_text(x + 30, y + 106, "OPEN THE PICTURE", 1, muted);
 
     if (selected == 1) fill_rect(x + 14, y + 126, menu_w - 28, 48, highlight);
-    draw_text(x + 30, y + 138, "SHUT DOWN", 2, white);
+    draw_text(x + 30, y + 136, "INSTALL TO COMPUTER", 2, white);
+    draw_text(x + 30, y + 160, "INSTALL STEVEOS", 1, muted);
+
+    if (selected == 2) fill_rect(x + 14, y + 180, menu_w - 28, 48, highlight);
+    draw_text(x + 30, y + 192, "SHUT DOWN", 2, white);
 }
 
-static void redraw(int start_open, int selected) {
-    draw_desktop();
-    if (start_open) draw_start_menu(selected);
+static void draw_installer(void) {
+    uint32_t bg = pack_pixel(screen.format, screen.mask, 18, 23, 34);
+    uint32_t panel = pack_pixel(screen.format, screen.mask, 30, 37, 52);
+    uint32_t border = pack_pixel(screen.format, screen.mask, 75, 88, 115);
+    uint32_t white = pack_pixel(screen.format, screen.mask, 255, 255, 255);
+    uint32_t muted = pack_pixel(screen.format, screen.mask, 185, 195, 210);
+    uint32_t button = pack_pixel(screen.format, screen.mask, 55, 80, 120);
+
+    fill_rect(0, 0, screen.w, screen.h, bg);
+
+    int w = 720;
+    int h = 390;
+    int x = ((int)screen.w - w) / 2;
+    int y = ((int)screen.h - h) / 2;
+    if (x < 10) x = 10;
+    if (y < 10) y = 10;
+
+    fill_rect(x, y, w, h, panel);
+    fill_rect(x, y, w, 4, border);
+
+    draw_text(x + 38, y + 35, "STEVEOS INSTALLER", 4, white);
+    draw_text(x + 38, y + 95, "INSTALL STEVEOS TO THIS COMPUTER", 2, white);
+    draw_text(x + 38, y + 145, "THE INSTALLER WILL SET UP STEVEOS", 1, muted);
+    draw_text(x + 38, y + 168, "ON AN INTERNAL DRIVE", 1, muted);
+
+    fill_rect(x + 38, y + 225, 280, 58, button);
+    draw_text(x + 70, y + 242, "INSTALL", 3, white);
+
+    fill_rect(x + 338, y + 225, 280, 58, border);
+    draw_text(x + 370, y + 242, "CANCEL", 3, white);
+
+    draw_text(x + 38, y + 325, "PRESS I TO INSTALL OR ESC TO CANCEL", 1, muted);
+}
+
+static void redraw(int start_open, int selected, int installer_open) {
+    if (installer_open) {
+        draw_installer();
+    } else {
+        draw_desktop();
+        if (start_open) draw_start_menu(selected);
+    }
     draw_cursor();
 }
 
@@ -190,7 +231,7 @@ static int point_in_rect(int px, int py, int x, int y, int w, int h) {
     return px >= x && px < x + w && py >= y && py < y + h;
 }
 
-static void handle_mouse(int start_open, int *selected, int *show_image) {
+static void handle_mouse(int *start_open, int *selected, int *show_image, int *installer_open) {
     if (!mouse) return;
 
     EFI_SIMPLE_POINTER_STATE state;
@@ -220,23 +261,38 @@ static void handle_mouse(int start_open, int *selected, int *show_image) {
     if (!clicked && old_x == mouse_x && old_y == mouse_y) return;
 
     if (clicked) {
-        int start_y = (int)screen.h - 52;
-        if (point_in_rect(mouse_x, mouse_y, 12, start_y, 150, 40)) {
-            start_open = !start_open;
-            *selected = 0;
-        } else if (start_open) {
-            int menu_x = 12;
-            int menu_y = (int)screen.h - 64 - 200 - 8;
-            if (point_in_rect(mouse_x, mouse_y, menu_x + 14, menu_y + 72, 332, 48)) {
-                *show_image = 1;
-                start_open = 0;
-            } else if (point_in_rect(mouse_x, mouse_y, menu_x + 14, menu_y + 126, 332, 48)) {
-                /* Shutdown is intentionally a placeholder for now. */
+        if (*installer_open) {
+            int w = 720;
+            int h = 390;
+            int x = ((int)screen.w - w) / 2;
+            int y = ((int)screen.h - h) / 2;
+            if (x < 10) x = 10;
+            if (y < 10) y = 10;
+            if (point_in_rect(mouse_x, mouse_y, x + 38, y + 225, 280, 58)) {
+                /* Actual disk installation will be connected to the filesystem layer. */
+            } else if (point_in_rect(mouse_x, mouse_y, x + 338, y + 225, 280, 58)) {
+                *installer_open = 0;
+            }
+        } else {
+            int start_y = (int)screen.h - 52;
+            if (point_in_rect(mouse_x, mouse_y, 12, start_y, 150, 40)) {
+                *start_open = !*start_open;
+                *selected = 0;
+            } else if (*start_open) {
+                int menu_x = 12;
+                int menu_y = (int)screen.h - 64 - 290 - 8;
+                if (point_in_rect(mouse_x, mouse_y, menu_x + 14, menu_y + 72, 402, 48)) {
+                    *show_image = 1;
+                    *start_open = 0;
+                } else if (point_in_rect(mouse_x, mouse_y, menu_x + 14, menu_y + 126, 402, 48)) {
+                    *installer_open = 1;
+                    *start_open = 0;
+                }
             }
         }
     }
 
-    redraw(start_open, *selected);
+    redraw(*start_open, *selected, *installer_open);
 }
 
 EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_table) {
@@ -269,7 +325,6 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_tab
     screen.mask = gop->Mode->Info->PixelInformation;
     screen.fb = (uint32_t *)(UINTN)gop->Mode->FrameBufferBase;
 
-    /* Try to locate a firmware mouse/touchpad. */
     uefi_call_wrapper(BS->LocateProtocol, 3,
                       &gEfiSimplePointerProtocolGuid, NULL, (void **)&mouse);
     if (mouse) uefi_call_wrapper(mouse->Reset, 2, mouse, FALSE);
@@ -291,7 +346,8 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_tab
     int start_open = 0;
     int selected = 0;
     int show_image = 0;
-    redraw(0, 0);
+    int installer_open = 0;
+    redraw(0, 0, 0);
 
     while (1) {
         UINTN event_index = 0;
@@ -300,7 +356,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_tab
 
         if (event_index == 1) {
             if (show_image) continue;
-            handle_mouse(start_open, &selected, &show_image);
+            handle_mouse(&start_open, &selected, &show_image, &installer_open);
             if (show_image) {
                 draw_image();
                 draw_cursor();
@@ -311,35 +367,53 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_tab
         status = uefi_call_wrapper(ST->ConIn->ReadKeyStroke, 2, ST->ConIn, &key);
         if (EFI_ERROR(status)) continue;
 
+        if (installer_open) {
+            if (key.ScanCode == SCAN_ESC) {
+                installer_open = 0;
+                redraw(0, 0, 0);
+            } else if (key.UnicodeChar == 'i' || key.UnicodeChar == 'I') {
+                /* Actual disk installation will be connected to the filesystem layer. */
+                redraw(0, 0, 1);
+            }
+            continue;
+        }
+
         if (show_image) {
             show_image = 0;
-            redraw(0, 0);
+            redraw(0, 0, 0);
             continue;
         }
 
         if (key.UnicodeChar == 's' || key.UnicodeChar == 'S') {
             start_open = !start_open;
             selected = 0;
-            redraw(start_open, selected);
+            redraw(start_open, selected, 0);
             continue;
         }
 
         if (!start_open) continue;
 
         if (key.ScanCode == SCAN_UP) {
-            selected = 0;
-            redraw(1, selected);
+            selected--;
+            if (selected < 0) selected = 2;
+            redraw(1, selected, 0);
         } else if (key.ScanCode == SCAN_DOWN) {
-            selected = 1;
-            redraw(1, selected);
+            selected++;
+            if (selected > 2) selected = 0;
+            redraw(1, selected, 0);
         } else if (key.ScanCode == SCAN_ESC) {
             start_open = 0;
-            redraw(0, selected);
+            redraw(0, selected, 0);
         } else if (key.UnicodeChar == CHAR_CARRIAGE_RETURN || key.UnicodeChar == ' ') {
             if (selected == 0) {
                 draw_image();
                 draw_cursor();
                 show_image = 1;
+                start_open = 0;
+            } else if (selected == 1) {
+                installer_open = 1;
+                start_open = 0;
+                redraw(0, 0, 1);
             }
         }
     }
