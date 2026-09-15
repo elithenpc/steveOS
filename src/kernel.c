@@ -8,6 +8,7 @@ extern const unsigned char _binary_build_native_kernel_raw_start[];
 extern const unsigned char _binary_build_native_kernel_raw_end[];
 
 typedef void (*STEVEOS_NATIVE_ENTRY)(STEVEOS_BOOT_INFO *boot, void *stack_top);
+#define STEVEOS_KERNEL_LOAD_ADDRESS 0x00200000ULL
 
 static EFI_STATUS get_memory_map(EFI_MEMORY_DESCRIPTOR **map,
                                  UINTN *map_size,
@@ -43,6 +44,16 @@ static EFI_STATUS get_memory_map(EFI_MEMORY_DESCRIPTOR **map,
     *descriptor_size = desc_size;
     *descriptor_version = version;
     return EFI_SUCCESS;
+}
+
+static EFI_PHYSICAL_ADDRESS allocate_kernel_pages(UINTN pages) {
+    EFI_PHYSICAL_ADDRESS address = STEVEOS_KERNEL_LOAD_ADDRESS;
+    EFI_STATUS st = uefi_call_wrapper(BS->AllocatePages, 4,
+                                      AllocateAddress,
+                                      EfiLoaderData,
+                                      pages,
+                                      &address);
+    return EFI_ERROR(st) ? 0 : address;
 }
 
 static EFI_PHYSICAL_ADDRESS allocate_pages(UINTN pages) {
@@ -91,7 +102,7 @@ EFI_STATUS steveos_kernel_boot(EFI_HANDLE image_handle,
     const UINTN kernel_pages = (kernel_size + 4095) / 4096;
     const UINTN stack_pages = 16;
 
-    EFI_PHYSICAL_ADDRESS kernel_addr = allocate_pages(kernel_pages);
+    EFI_PHYSICAL_ADDRESS kernel_addr = allocate_kernel_pages(kernel_pages);
     EFI_PHYSICAL_ADDRESS stack_addr = allocate_pages(stack_pages);
     STEVEOS_BOOT_INFO *boot = AllocatePool(sizeof(STEVEOS_BOOT_INFO));
 
