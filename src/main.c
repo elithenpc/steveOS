@@ -20,279 +20,190 @@ static int mouse_x;
 static int mouse_y;
 static int mouse_left_down;
 
-static uint32_t read_u32(const unsigned char *p) {
-    return ((uint32_t)p[0]) | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
-}
+typedef struct {
+    int x, y, w, h;
+} RECT;
 
-static uint32_t scale_channel(uint8_t value, uint32_t mask) {
-    if (!mask) return 0;
-    uint32_t shift = 0;
-    while (((mask >> shift) & 1u) == 0u) shift++;
-    uint32_t bits = 0;
-    while (((mask >> (shift + bits)) & 1u) != 0u) bits++;
-    uint32_t max = (1u << bits) - 1u;
-    return (((uint32_t)value * max + 127u) / 255u) << shift;
-}
-
-static uint32_t pack_pixel(EFI_GRAPHICS_PIXEL_FORMAT format, EFI_PIXEL_BITMASK mask,
-                           uint8_t r, uint8_t g, uint8_t b) {
-    if (format == PixelBlueGreenRedReserved8BitPerColor)
-        return ((uint32_t)b) | ((uint32_t)g << 8) | ((uint32_t)r << 16);
-    if (format == PixelRedGreenBlueReserved8BitPerColor)
-        return ((uint32_t)r) | ((uint32_t)g << 8) | ((uint32_t)b << 16);
-    return scale_channel(r, mask.RedMask) |
-           scale_channel(g, mask.GreenMask) |
-           scale_channel(b, mask.BlueMask);
-}
-
-static void put_pixel(int x, int y, uint32_t colour) {
+static void put_pixel(int x, int y, uint32_t color) {
     if (x < 0 || y < 0 || (UINT32)x >= screen.w || (UINT32)y >= screen.h) return;
-    screen.fb[(uint64_t)y * screen.stride + x] = colour;
+    screen.fb[(UINTN)y * screen.stride + x] = color;
 }
 
-static void fill_rect(int x, int y, int w, int h, uint32_t colour) {
-    if (x < 0) { w += x; x = 0; }
-    if (y < 0) { h += y; y = 0; }
-    if (x + w > (int)screen.w) w = (int)screen.w - x;
-    if (y + h > (int)screen.h) h = (int)screen.h - y;
-    if (w <= 0 || h <= 0) return;
-    for (int yy = y; yy < y + h; yy++)
-        for (int xx = x; xx < x + w; xx++) put_pixel(xx, yy, colour);
+static void fill_rect(RECT r, uint32_t color) {
+    int x0 = r.x < 0 ? 0 : r.x;
+    int y0 = r.y < 0 ? 0 : r.y;
+    int x1 = r.x + r.w;
+    int y1 = r.y + r.h;
+    if (x1 > (int)screen.w) x1 = (int)screen.w;
+    if (y1 > (int)screen.h) y1 = (int)screen.h;
+    for (int y = y0; y < y1; y++)
+        for (int x = x0; x < x1; x++)
+            put_pixel(x, y, color);
 }
 
-/* Tiny 5x7 font for the desktop UI. */
-static const uint8_t font[26][7] = {
-    {14,17,17,31,17,17,17}, {30,17,17,30,17,17,30}, {14,17,16,16,16,17,14},
-    {30,17,17,17,17,17,30}, {31,16,16,30,16,16,31}, {31,16,16,30,16,16,16},
-    {14,17,16,23,17,17,14}, {17,17,17,31,17,17,17}, {14,4,4,4,4,4,14},
-    {7,2,2,2,18,18,12}, {17,18,20,24,20,18,17}, {16,16,16,16,16,16,31},
-    {17,27,21,21,17,17,17}, {17,25,21,19,17,17,17}, {14,17,17,17,17,17,14},
-    {30,17,17,30,16,16,16}, {14,17,17,17,21,18,13}, {30,17,17,30,20,18,17},
-    {15,16,16,14,1,1,30}, {31,4,4,4,4,4,4}, {17,17,17,17,17,17,14},
-    {17,17,17,17,17,10,4}, {17,17,17,21,21,21,10}, {17,17,10,4,10,17,17},
-    {17,17,10,4,4,4,4}, {31,1,2,4,8,16,31}
-};
-
-static void draw_char(int x, int y, char c, int scale, uint32_t colour) {
-    if (c == ' ') return;
-    if (c < 'A' || c > 'Z') return;
-    int index = c - 'A';
-    for (int row = 0; row < 7; row++)
+static void draw_char(int x, int y, char c, uint32_t color, int scale) {
+    static const uint8_t font[][5] = {
+        {0x7e,0x11,0x11,0x7e,0}, {0x7f,0x49,0x49,0x36,0},
+        {0x3e,0x41,0x41,0x22,0}, {0x7f,0x41,0x41,0x3e,0},
+        {0x7f,0x49,0x49,0x41,0}, {0x7f,0x09,0x09,0x01,0},
+        {0x3e,0x41,0x51,0x72,0}, {0x7f,0x08,0x08,0x7f,0},
+        {0,0x41,0x7f,0x41,0}, {0x20,0x40,0x41,0x3f,0},
+        {0x7f,0x08,0x14,0x63,0}, {0x7f,0x40,0x40,0x40,0},
+        {0x7f,0x06,0x18,0x06,0x7f}, {0x7f,0x06,0x18,0x7f,0},
+        {0x3e,0x41,0x41,0x3e,0}, {0x7f,0x09,0x09,0x06,0},
+        {0x3e,0x41,0x61,0x7e,0}, {0x7f,0x09,0x19,0x66,0},
+        {0x26,0x49,0x49,0x32,0}, {0x01,0x7f,0x01,0x01,0},
+        {0x3f,0x40,0x40,0x3f,0}, {0x1f,0x60,0x60,0x1f,0},
+        {0x7f,0x30,0x0c,0x30,0x7f}, {0x63,0x14,0x08,0x14,0x63,},
+        {0x07,0x08,0x70,0x08,0x07}, {0x61,0x51,0x49,0x45,0x43}
+    };
+    if (c >= 'A' && c <= 'Z') {
+        const uint8_t *g = font[c - 'A'];
         for (int col = 0; col < 5; col++)
-            if (font[index][row] & (1 << (4 - col)))
-                fill_rect(x + col * scale, y + row * scale, scale, scale, colour);
+            for (int row = 0; row < 7; row++)
+                if (g[col] & (1u << row))
+                    fill_rect((RECT){x + col * scale, y + row * scale, scale, scale}, color);
+    }
 }
 
-static void draw_text(int x, int y, const char *text, int scale, uint32_t colour) {
-    while (*text) {
-        draw_char(x, y, *text++, scale, colour);
-        x += 6 * scale;
+static void draw_text(int x, int y, const char *s, uint32_t color, int scale) {
+    while (*s) {
+        if (*s == ' ') x += 6 * scale;
+        else { draw_char(x, y, *s, color, scale); x += 6 * scale; }
+        s++;
     }
 }
 
 static void draw_image(void) {
-    const unsigned char *raw = _binary_build_boot_raw_start;
-    const unsigned char *raw_end = _binary_build_boot_raw_end;
-    if (raw_end - raw < 8) return;
-
-    uint32_t src_w = read_u32(raw);
-    uint32_t src_h = read_u32(raw + 4);
-    const unsigned char *pixels = raw + 8;
-    uint64_t required = (uint64_t)src_w * src_h * 4;
-    if (src_w == 0 || src_h == 0 || (uint64_t)(raw_end - pixels) < required) return;
-
-    UINT32 draw_w = screen.w;
-    UINT32 draw_h = (UINT32)((uint64_t)src_h * screen.w / src_w);
-    if (draw_h > screen.h) {
-        draw_h = screen.h;
-        draw_w = (UINT32)((uint64_t)src_w * screen.h / src_h);
-    }
-    UINT32 off_x = (screen.w - draw_w) / 2;
-    UINT32 off_y = (screen.h - draw_h) / 2;
+    const unsigned char *p = _binary_build_boot_raw_start;
+    uint32_t iw = *(const uint32_t *)(p + 0);
+    uint32_t ih = *(const uint32_t *)(p + 4);
+    const unsigned char *pixels = p + 8;
+    if (!iw || !ih) return;
 
     for (UINT32 y = 0; y < screen.h; y++) {
+        UINT32 sy = (UINT64)y * ih / screen.h;
         for (UINT32 x = 0; x < screen.w; x++) {
-            uint8_t r = 0, g = 0, b = 0;
-            if (x >= off_x && x < off_x + draw_w && y >= off_y && y < off_y + draw_h) {
-                UINT32 sx = (UINT32)((uint64_t)(x - off_x) * src_w / draw_w);
-                UINT32 sy = (UINT32)((uint64_t)(y - off_y) * src_h / draw_h);
-                const unsigned char *p = pixels + ((uint64_t)sy * src_w + sx) * 4;
-                b = p[0]; g = p[1]; r = p[2];
+            UINT32 sx = (UINT64)x * iw / screen.w;
+            const unsigned char *q = pixels + ((UINTN)sy * iw + sx) * 4;
+            uint32_t b = q[0], g = q[1], r = q[2], a = q[3];
+            if (a == 255) put_pixel(x, y, (r << 16) | (g << 8) | b);
+            else {
+                uint32_t old = screen.fb[(UINTN)y * screen.stride + x];
+                uint32_t or_ = (old >> 16) & 255, og = (old >> 8) & 255, ob = old & 255;
+                uint32_t nr = (r*a + or_*(255-a))/255;
+                uint32_t ng = (g*a + og*(255-a))/255;
+                uint32_t nb = (b*a + ob*(255-a))/255;
+                put_pixel(x, y, (nr << 16) | (ng << 8) | nb);
             }
-            put_pixel((int)x, (int)y, pack_pixel(screen.format, screen.mask, r, g, b));
         }
     }
 }
 
 static void draw_cursor(void) {
-    uint32_t white = pack_pixel(screen.format, screen.mask, 255, 255, 255);
-    uint32_t black = pack_pixel(screen.format, screen.mask, 0, 0, 0);
-
-    for (int i = 0; i < 18; i++) {
-        put_pixel(mouse_x + i, mouse_y + i, black);
-        if (i < 12) put_pixel(mouse_x + i + 1, mouse_y + i, white);
+    for (int i = 0; i < 16; i++) {
+        put_pixel(mouse_x, mouse_y + i, 0xFFFFFF);
+        if (i < 10) put_pixel(mouse_x + i, mouse_y + i, 0xFFFFFF);
     }
-    for (int i = 0; i < 11; i++) {
-        for (int j = 0; j <= i / 2; j++) {
-            put_pixel(mouse_x + j, mouse_y + i, white);
-            put_pixel(mouse_x + j + 1, mouse_y + i, black);
-        }
+}
+
+static int point_in_rect(int x, int y, RECT r) {
+    return x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h;
+}
+
+static void draw_start_menu(int selected) {
+    RECT menu = {24, (int)screen.h - 250, 390, 220};
+    fill_rect(menu, 0x20252B);
+    fill_rect((RECT){menu.x, menu.y, menu.w, 42}, 0x101318);
+    draw_text(menu.x + 18, menu.y + 13, "STEVEOS", 0xFFFFFF, 2);
+
+    const char *items[] = {"BLEHHH", "INSTALL TO COMPUTER", "SHUT DOWN"};
+    for (int i = 0; i < 3; i++) {
+        RECT row = {menu.x + 10, menu.y + 55 + i*48, menu.w - 20, 40};
+        if (i == selected) fill_rect(row, 0x3D4650);
+        draw_text(row.x + 12, row.y + 12, items[i], 0xFFFFFF, 1);
     }
 }
 
 static void draw_desktop(void) {
-    fill_rect(0, 0, screen.w, screen.h, pack_pixel(screen.format, screen.mask, 24, 30, 42));
-
-    draw_text(32, 28, "STEVEOS", 5, pack_pixel(screen.format, screen.mask, 255, 255, 255));
-    draw_text(32, 78, "PRESS S TO OPEN START", 2,
-              pack_pixel(screen.format, screen.mask, 190, 200, 215));
-
-    fill_rect(0, (int)screen.h - 64, screen.w, 64,
-              pack_pixel(screen.format, screen.mask, 18, 22, 32));
-    fill_rect(12, (int)screen.h - 52, 150, 40,
-              pack_pixel(screen.format, screen.mask, 45, 55, 75));
-    draw_text(38, (int)screen.h - 43, "START", 3,
-              pack_pixel(screen.format, screen.mask, 255, 255, 255));
-}
-
-static void draw_start_menu(int selected) {
-    int menu_w = 430;
-    int menu_h = 290;
-    int x = 12;
-    int y = (int)screen.h - 64 - menu_h - 8;
-    uint32_t panel = pack_pixel(screen.format, screen.mask, 30, 36, 50);
-    uint32_t border = pack_pixel(screen.format, screen.mask, 75, 88, 115);
-    uint32_t white = pack_pixel(screen.format, screen.mask, 255, 255, 255);
-    uint32_t muted = pack_pixel(screen.format, screen.mask, 180, 190, 205);
-    uint32_t highlight = pack_pixel(screen.format, screen.mask, 65, 95, 145);
-
-    fill_rect(x, y, menu_w, menu_h, panel);
-    fill_rect(x, y, menu_w, 3, border);
-    draw_text(x + 24, y + 18, "STEVEOS", 3, white);
-    draw_text(x + 24, y + 48, "APPS", 2, muted);
-
-    if (selected == 0) fill_rect(x + 14, y + 72, menu_w - 28, 48, highlight);
-    draw_text(x + 30, y + 82, "BLEHHH", 3, white);
-    draw_text(x + 30, y + 106, "OPEN THE PICTURE", 1, muted);
-
-    if (selected == 1) fill_rect(x + 14, y + 126, menu_w - 28, 48, highlight);
-    draw_text(x + 30, y + 136, "INSTALL TO COMPUTER", 2, white);
-    draw_text(x + 30, y + 160, "INSTALL STEVEOS", 1, muted);
-
-    if (selected == 2) fill_rect(x + 14, y + 180, menu_w - 28, 48, highlight);
-    draw_text(x + 30, y + 192, "SHUT DOWN", 2, white);
+    fill_rect((RECT){0,0,(int)screen.w,(int)screen.h},0x17202A);
+    fill_rect((RECT){0,0,(int)screen.w,34},0x0D1117);
+    draw_text(14, 10, "STEVEOS", 0xFFFFFF, 1);
+    draw_text((int)screen.w - 145, 10, "UEFI MODE", 0xAEB7C2, 1);
+    draw_text(28, 70, "WELCOME", 0xFFFFFF, 3);
+    draw_text(30, 108, "STEVEOS IS RUNNING", 0xC7D0D9, 1);
+    draw_text(30, 132, "PRESS S FOR START", 0xC7D0D9, 1);
+    fill_rect((RECT){20,(int)screen.h-50,130,38},0x101318);
+    draw_text(42,(int)screen.h-38,"START",0xFFFFFF,1);
 }
 
 static void draw_installer(void) {
-    uint32_t bg = pack_pixel(screen.format, screen.mask, 18, 23, 34);
-    uint32_t panel = pack_pixel(screen.format, screen.mask, 30, 37, 52);
-    uint32_t border = pack_pixel(screen.format, screen.mask, 75, 88, 115);
-    uint32_t white = pack_pixel(screen.format, screen.mask, 255, 255, 255);
-    uint32_t muted = pack_pixel(screen.format, screen.mask, 185, 195, 210);
-    uint32_t button = pack_pixel(screen.format, screen.mask, 55, 80, 120);
-
-    fill_rect(0, 0, screen.w, screen.h, bg);
-
-    int w = 720;
-    int h = 390;
-    int x = ((int)screen.w - w) / 2;
-    int y = ((int)screen.h - h) / 2;
-    if (x < 10) x = 10;
-    if (y < 10) y = 10;
-
-    fill_rect(x, y, w, h, panel);
-    fill_rect(x, y, w, 4, border);
-
-    draw_text(x + 38, y + 35, "STEVEOS INSTALLER", 4, white);
-    draw_text(x + 38, y + 95, "INSTALL STEVEOS TO THIS COMPUTER", 2, white);
-    draw_text(x + 38, y + 145, "THE INSTALLER WILL SET UP STEVEOS", 1, muted);
-    draw_text(x + 38, y + 168, "ON AN INTERNAL DRIVE", 1, muted);
-
-    fill_rect(x + 38, y + 225, 280, 58, button);
-    draw_text(x + 70, y + 242, "INSTALL", 3, white);
-
-    fill_rect(x + 338, y + 225, 280, 58, border);
-    draw_text(x + 370, y + 242, "CANCEL", 3, white);
-
-    draw_text(x + 38, y + 325, "PRESS I TO INSTALL OR ESC TO CANCEL", 1, muted);
+    fill_rect((RECT){0,0,(int)screen.w,(int)screen.h},0x11161C);
+    RECT panel = {(int)screen.w/2-280,(int)screen.h/2-150,560,300};
+    fill_rect(panel,0x20252B);
+    draw_text(panel.x+35,panel.y+30,"STEVEOS INSTALLER",0xFFFFFF,2);
+    draw_text(panel.x+35,panel.y+82,"INSTALL STEVEOS TO THIS COMPUTER",0xD5DCE3,1);
+    draw_text(panel.x+35,panel.y+108,"DISK SELECTION WILL BE ADDED NEXT",0x9DA7B2,1);
+    fill_rect((RECT){panel.x+35,panel.y+190,180,48},0x3D4650);
+    fill_rect((RECT){panel.x+245,panel.y+190,180,48},0x30363D);
+    draw_text(panel.x+98,panel.y+207,"INSTALL",0xFFFFFF,1);
+    draw_text(panel.x+310,panel.y+207,"CANCEL",0xFFFFFF,1);
 }
 
 static void redraw(int start_open, int selected, int installer_open) {
-    if (installer_open) {
-        draw_installer();
-    } else {
-        draw_desktop();
-        if (start_open) draw_start_menu(selected);
-    }
+    if (installer_open) { draw_installer(); draw_cursor(); return; }
+    draw_desktop();
+    if (start_open) draw_start_menu(selected);
     draw_cursor();
-}
-
-static int point_in_rect(int px, int py, int x, int y, int w, int h) {
-    return px >= x && px < x + w && py >= y && py < y + h;
 }
 
 static void handle_mouse(int *start_open, int *selected, int *show_image, int *installer_open) {
     if (!mouse) return;
-
     EFI_SIMPLE_POINTER_STATE state;
     EFI_STATUS status = uefi_call_wrapper(mouse->GetState, 2, mouse, &state);
     if (EFI_ERROR(status)) return;
 
-    int old_x = mouse_x;
-    int old_y = mouse_y;
-
-    int dx = (int)state.RelativeMovementX;
-    int dy = (int)state.RelativeMovementY;
-    if (dx > 0) dx = (dx + 1) / 2;
-    else if (dx < 0) dx = (dx - 1) / 2;
-    if (dy > 0) dy = (dy + 1) / 2;
-    else if (dy < 0) dy = (dy - 1) / 2;
-
-    mouse_x += dx;
-    mouse_y += dy;
+    mouse_x += state.RelativeMovementX / 2;
+    mouse_y += state.RelativeMovementY / 2;
     if (mouse_x < 0) mouse_x = 0;
     if (mouse_y < 0) mouse_y = 0;
     if (mouse_x >= (int)screen.w) mouse_x = (int)screen.w - 1;
     if (mouse_y >= (int)screen.h) mouse_y = (int)screen.h - 1;
 
-    int clicked = state.LeftButton && !mouse_left_down;
-    mouse_left_down = state.LeftButton;
+    int left = state.LeftButton ? 1 : 0;
+    int clicked = left && !mouse_left_down;
+    mouse_left_down = left;
+    if (!clicked) return;
 
-    if (!clicked && old_x == mouse_x && old_y == mouse_y) return;
+    if (*installer_open) {
+        RECT panel = {(int)screen.w/2-280,(int)screen.h/2-150,560,300};
+        if (point_in_rect(mouse_x,mouse_y,(RECT){panel.x+245,panel.y+190,180,48})) *installer_open=0;
+        redraw(0,0,*installer_open);
+        return;
+    }
 
-    if (clicked) {
-        if (*installer_open) {
-            int w = 720;
-            int h = 390;
-            int x = ((int)screen.w - w) / 2;
-            int y = ((int)screen.h - h) / 2;
-            if (x < 10) x = 10;
-            if (y < 10) y = 10;
-            if (point_in_rect(mouse_x, mouse_y, x + 38, y + 225, 280, 58)) {
-                /* Actual disk installation will be connected to the filesystem layer. */
-            } else if (point_in_rect(mouse_x, mouse_y, x + 338, y + 225, 280, 58)) {
-                *installer_open = 0;
-            }
-        } else {
-            int start_y = (int)screen.h - 52;
-            if (point_in_rect(mouse_x, mouse_y, 12, start_y, 150, 40)) {
-                *start_open = !*start_open;
-                *selected = 0;
-            } else if (*start_open) {
-                int menu_x = 12;
-                int menu_y = (int)screen.h - 64 - 290 - 8;
-                if (point_in_rect(mouse_x, mouse_y, menu_x + 14, menu_y + 72, 402, 48)) {
-                    *show_image = 1;
-                    *start_open = 0;
-                } else if (point_in_rect(mouse_x, mouse_y, menu_x + 14, menu_y + 126, 402, 48)) {
-                    *installer_open = 1;
-                    *start_open = 0;
+    RECT start = {20,(int)screen.h-55,140,48};
+    if (point_in_rect(mouse_x,mouse_y,start)) {
+        *start_open = !*start_open;
+        redraw(*start_open,*selected,0);
+        return;
+    }
+
+    if (*start_open) {
+        RECT menu = {24,(int)screen.h-250,390,220};
+        for (int i=0;i<3;i++) {
+            RECT row={menu.x+10,menu.y+55+i*48,menu.w-20,40};
+            if (point_in_rect(mouse_x,mouse_y,row)) {
+                *selected=i;
+                if (i==0) { *show_image=1; *start_open=0; draw_image(); draw_cursor(); }
+                else if (i==1) { *installer_open=1; *start_open=0; redraw(0,0,1); }
+                else {
+                    uefi_call_wrapper(RT->ResetSystem, 4, EfiResetShutdown, EFI_SUCCESS, 0, NULL);
                 }
+                return;
             }
         }
     }
-
-    redraw(*start_open, *selected, *installer_open);
 }
 
 EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_table) {
@@ -311,10 +222,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_tab
         status = uefi_call_wrapper(gop->QueryMode, 4, gop, mode, &info_size, &info);
         if (EFI_ERROR(status)) continue;
         UINT32 area = info->HorizontalResolution * info->VerticalResolution;
-        if (area > best_area) {
-            best_area = area;
-            best_mode = mode;
-        }
+        if (area > best_area) { best_area = area; best_mode = mode; }
     }
     uefi_call_wrapper(gop->SetMode, 2, gop, best_mode);
 
@@ -325,98 +233,47 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_tab
     screen.mask = gop->Mode->Info->PixelInformation;
     screen.fb = (uint32_t *)(UINTN)gop->Mode->FrameBufferBase;
 
-    uefi_call_wrapper(BS->LocateProtocol, 3,
-                      &gEfiSimplePointerProtocolGuid, NULL, (void **)&mouse);
-    if (mouse) uefi_call_wrapper(mouse->Reset, 2, mouse, FALSE);
-
-    mouse_x = (int)screen.w / 2;
-    mouse_y = (int)screen.h / 2;
-    mouse_left_down = 0;
+    /* Some GNU-EFI releases do not export the Simple Pointer GUID symbol. */
+    EFI_GUID simple_pointer_guid = EFI_SIMPLE_POINTER_PROTOCOL_GUID;
+    status = uefi_call_wrapper(BS->LocateProtocol, 3, &simple_pointer_guid, NULL, (void **)&mouse);
+    if (!EFI_ERROR(status) && mouse) uefi_call_wrapper(mouse->Reset, 2, mouse, FALSE);
 
     EFI_EVENT timer_event;
     status = uefi_call_wrapper(BS->CreateEvent, 5, EVT_TIMER, TPL_CALLBACK, NULL, NULL, &timer_event);
     if (EFI_ERROR(status)) return status;
     uefi_call_wrapper(BS->SetTimer, 3, timer_event, TimerPeriodic, 160000);
 
-    EFI_EVENT events[2];
-    events[0] = ST->ConIn->WaitForKey;
-    events[1] = timer_event;
-
+    EFI_EVENT events[2] = { ST->ConIn->WaitForKey, timer_event };
     EFI_INPUT_KEY key;
-    int start_open = 0;
-    int selected = 0;
-    int show_image = 0;
-    int installer_open = 0;
-    redraw(0, 0, 0);
+    int start_open=0, selected=0, show_image=0, installer_open=0;
+    mouse_x=(int)screen.w/2; mouse_y=(int)screen.h/2; mouse_left_down=0;
+    redraw(0,0,0);
 
     while (1) {
-        UINTN event_index = 0;
-        status = uefi_call_wrapper(BS->WaitForEvent, 3, 2, events, &event_index);
+        UINTN event_index=0;
+        status=uefi_call_wrapper(BS->WaitForEvent,3,2,events,&event_index);
         if (EFI_ERROR(status)) continue;
-
-        if (event_index == 1) {
-            if (show_image) continue;
-            handle_mouse(&start_open, &selected, &show_image, &installer_open);
-            if (show_image) {
-                draw_image();
-                draw_cursor();
-            }
+        if (event_index==1) {
+            if (!show_image) handle_mouse(&start_open,&selected,&show_image,&installer_open);
             continue;
         }
-
-        status = uefi_call_wrapper(ST->ConIn->ReadKeyStroke, 2, ST->ConIn, &key);
+        status=uefi_call_wrapper(ST->ConIn->ReadKeyStroke,2,ST->ConIn,&key);
         if (EFI_ERROR(status)) continue;
 
         if (installer_open) {
-            if (key.ScanCode == SCAN_ESC) {
-                installer_open = 0;
-                redraw(0, 0, 0);
-            } else if (key.UnicodeChar == 'i' || key.UnicodeChar == 'I') {
-                /* Actual disk installation will be connected to the filesystem layer. */
-                redraw(0, 0, 1);
-            }
+            if (key.ScanCode==SCAN_ESC) { installer_open=0; redraw(0,0,0); }
             continue;
         }
-
-        if (show_image) {
-            show_image = 0;
-            redraw(0, 0, 0);
-            continue;
-        }
-
-        if (key.UnicodeChar == 's' || key.UnicodeChar == 'S') {
-            start_open = !start_open;
-            selected = 0;
-            redraw(start_open, selected, 0);
-            continue;
-        }
-
+        if (show_image) { show_image=0; redraw(0,0,0); continue; }
+        if (key.UnicodeChar=='s'||key.UnicodeChar=='S') { start_open=!start_open; selected=0; redraw(start_open,selected,0); continue; }
         if (!start_open) continue;
-
-        if (key.ScanCode == SCAN_UP) {
-            selected--;
-            if (selected < 0) selected = 2;
-            redraw(1, selected, 0);
-        } else if (key.ScanCode == SCAN_DOWN) {
-            selected++;
-            if (selected > 2) selected = 0;
-            redraw(1, selected, 0);
-        } else if (key.ScanCode == SCAN_ESC) {
-            start_open = 0;
-            redraw(0, selected, 0);
-        } else if (key.UnicodeChar == CHAR_CARRIAGE_RETURN || key.UnicodeChar == ' ') {
-            if (selected == 0) {
-                draw_image();
-                draw_cursor();
-                show_image = 1;
-                start_open = 0;
-            } else if (selected == 1) {
-                installer_open = 1;
-                start_open = 0;
-                redraw(0, 0, 1);
-            }
+        if (key.ScanCode==SCAN_UP) { selected--; if(selected<0)selected=2; redraw(1,selected,0); }
+        else if (key.ScanCode==SCAN_DOWN) { selected++; if(selected>2)selected=0; redraw(1,selected,0); }
+        else if (key.ScanCode==SCAN_ESC) { start_open=0; redraw(0,selected,0); }
+        else if (key.UnicodeChar==CHAR_CARRIAGE_RETURN||key.UnicodeChar==' ') {
+            if(selected==0){show_image=1;start_open=0;draw_image();draw_cursor();}
+            else if(selected==1){installer_open=1;start_open=0;redraw(0,0,1);}
+            else uefi_call_wrapper(RT->ResetSystem,4,EfiResetShutdown,EFI_SUCCESS,0,NULL);
         }
     }
-
-    return EFI_SUCCESS;
 }
