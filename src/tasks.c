@@ -28,3 +28,10 @@ EFI_STATUS steveos_task_create(UINT64 entry_point) {
 UINT32 steveos_task_count(void) {
     return task_count_value;
 }
+
+EFI_STATUS steveos_task_get(UINT32 index, STEVEOS_TASK *task) {
+    if (!task || index >= task_count_value)
+        return EFI_INVALID_PARAMETER;
+    *task = tasks[index];
+    return EFI_SUCCESS;
+}
