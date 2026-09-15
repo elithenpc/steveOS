@@ -15,7 +15,7 @@ OBJCOPY_FLAGS := -j .text -j .sdata -j .data -j .dynamic -j .dynsym \
                  -j .rel -j .rela -j .reloc --target=efi-app-x86_64
 
 CORE_OBJS := build/network.o build/storage.o build/memory.o build/fs.o build/installer.o \
-             build/kernel.o build/interrupts.o build/tasks.o build/shell.o
+             build/kernel.o build/interrupts.o build/tasks.o build/shell.o build/bootlog.o
 
 all: build/BOOTX64.EFI
 
@@ -26,13 +26,17 @@ build/boot.raw.o: build/boot.raw
 	$(OBJCOPY) --input-target=binary --output-target=elf64-x86-64 \
 		--binary-architecture=i386:x86-64 build/boot.raw build/boot.raw.o
 
-build/main.o: src/main.c src/shell.h
+build/main.o: src/main.c src/shell.h src/bootlog.h
 	mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 
 build/shell.o: src/shell3.c src/shell.h src/memory.h src/storage.h src/network.h src/kernel.h src/tasks.h src/fs.h
 	mkdir -p build
 	$(CC) $(CFLAGS) -c src/shell3.c -o $@
+
+build/bootlog.o: src/bootlog.c src/bootlog.h src/memory.h src/storage.h src/network.h src/tasks.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -c src/bootlog.c -o $@
 
 build/network.o: src/network.c src/network.h
 	mkdir -p build
