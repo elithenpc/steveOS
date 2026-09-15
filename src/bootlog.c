@@ -105,11 +105,9 @@ EFI_STATUS steveos_boot_diagnostics(EFI_HANDLE image_handle,
     text(42, 48, "STEVEOS", 0xFFFFFF, 4);
     text(44, 103, "BOOT SEQUENCE", 0x8FA3BF, 1);
     text(44, 125, "INITIALISING SYSTEM COMPONENTS", 0xC9D5E5, 2);
-
     rect(42, 156, (int)width - 84, 2, 0x27354A);
 
     EFI_STATUS st;
-
     stage("UEFI SYSTEM TABLE", 0x62D48A);
     stage("GRAPHICS OUTPUT", 0x62D48A);
 
@@ -126,8 +124,8 @@ EFI_STATUS steveos_boot_diagnostics(EFI_HANDLE image_handle,
     (void)steveos_count_disks();
     stage("STORAGE DISCOVERY", 0x62D48A);
 
-    st = steveos_network_available();
-    stage(EFI_ERROR(st) ? "NETWORK DRIVER DEFERRED" : "NETWORK PROTOCOL", 0xD9A441);
+    /* Networking is deliberately on-demand so firmware cannot stall desktop boot. */
+    stage("NETWORK SERVICES ON DEMAND", 0xD9A441);
 
     st = steveos_tasks_init();
     if (EFI_ERROR(st)) stage("TASK SYSTEM FAILED", 0xD9534F);
