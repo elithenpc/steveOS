@@ -3,10 +3,7 @@
 #include <stdint.h>
 #include "network.h"
 
-/*
- * Early steveOS networking uses UEFI's HTTP stack. Firmware handles the
- * network adapter, DHCP, IP routing and DNS for this first stage.
- */
+/* Early steveOS networking uses UEFI's HTTP stack. */
 
 static EFI_HTTP_PROTOCOL *http = NULL;
 static EFI_HANDLE http_child = NULL;
@@ -32,6 +29,7 @@ static EFI_STATUS network_start(void) {
     EFI_HTTPv4_ACCESS_POINT ipv4;
     SetMem(&ipv4, sizeof(ipv4), 0);
     ipv4.UseDefaultAddress = TRUE;
+    ipv4.LocalPort = 0;
 
     EFI_HTTP_CONFIG_DATA config;
     SetMem(&config, sizeof(config), 0);
@@ -54,12 +52,8 @@ static void network_stop(void) {
         uefi_call_wrapper(http->Configure, 2, http, NULL);
         http = NULL;
     }
-
-    if (http_child && http_binding) {
-        uefi_call_wrapper(http_binding->DestroyChild, 2,
-                          http_binding, http_child);
-    }
-
+    if (http_child && http_binding)
+        uefi_call_wrapper(http_binding->DestroyChild, 2, http_binding, http_child);
     http_child = NULL;
     http_binding = NULL;
 }
@@ -72,7 +66,7 @@ EFI_STATUS steveos_http_test(void) {
     EFI_HTTP_MESSAGE request_message;
     EFI_HTTP_MESSAGE response_message;
     EFI_HTTP_HEADER request_header;
-    CHAR8 url[] = "http://example.com/";
+    CHAR16 url[] = L"http://example.com/";
     CHAR8 host[] = "example.com";
     UINT8 response_buffer[1024];
 
@@ -84,7 +78,7 @@ EFI_STATUS steveos_http_test(void) {
     request_data.Url = url;
 
     SetMem(&request_header, sizeof(request_header), 0);
-    request_header.FieldName = host;
+    request_header.FieldName = "Host";
     request_header.FieldValue = host;
 
     SetMem(&request_message, sizeof(request_message), 0);
