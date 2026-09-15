@@ -14,6 +14,8 @@ LDFLAGS := -nostdlib -znocombreloc -T $(GNU_EFI_LIBDIR)/elf_x86_64_efi.lds \
 OBJCOPY_FLAGS := -j .text -j .sdata -j .data -j .dynamic -j .dynsym \
                  -j .rel -j .rela -j .reloc --target=efi-app-x86_64
 
+CORE_OBJS := build/network.o build/storage.o build/memory.o
+
 all: build/BOOTX64.EFI
 
 build/boot.raw: blehhh.png tools/image_to_raw.py
@@ -27,12 +29,20 @@ build/main.o: src/main.c
 	mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 
-build/network.o: src/network.c
+build/network.o: src/network.c src/network.h
 	mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -c src/network.c -o $@
 
-build/boot.so: build/main.o build/network.o build/boot.raw.o
-	$(LD) $(LDFLAGS) build/main.o build/network.o build/boot.raw.o -o $@ -lefi -lgnuefi
+build/storage.o: src/storage.c src/storage.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -c src/storage.c -o $@
+
+build/memory.o: src/memory.c src/memory.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -c src/memory.c -o $@
+
+build/boot.so: build/main.o build/boot.raw.o $(CORE_OBJS)
+	$(LD) $(LDFLAGS) build/main.o build/boot.raw.o $(CORE_OBJS) -o $@ -lefi -lgnuefi
 
 build/BOOTX64.EFI: build/boot.so
 	$(OBJCOPY) $(OBJCOPY_FLAGS) $< $@
