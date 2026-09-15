@@ -14,7 +14,7 @@ LDFLAGS := -nostdlib -znocombreloc -T $(GNU_EFI_LIBDIR)/elf_x86_64_efi.lds \
 OBJCOPY_FLAGS := -j .text -j .sdata -j .data -j .dynamic -j .dynsym \
                  -j .rel -j .rela -j .reloc --target=efi-app-x86_64
 
-CORE_OBJS := build/network.o build/storage.o build/memory.o
+CORE_OBJS := build/network.o build/storage.o build/memory.o build/fs.o build/installer.o
 
 all: build/BOOTX64.EFI
 
@@ -40,6 +40,14 @@ build/storage.o: src/storage.c src/storage.h
 build/memory.o: src/memory.c src/memory.h
 	mkdir -p build
 	$(CC) $(CFLAGS) -c src/memory.c -o $@
+
+build/fs.o: src/fs.c src/fs.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -c src/fs.c -o $@
+
+build/installer.o: src/installer.c src/installer.h src/fs.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -c src/installer.c -o $@
 
 build/boot.so: build/main.o build/boot.raw.o $(CORE_OBJS)
 	$(LD) $(LDFLAGS) build/main.o build/boot.raw.o $(CORE_OBJS) -o $@ -lefi -lgnuefi
