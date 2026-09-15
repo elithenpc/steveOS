@@ -23,7 +23,7 @@ typedef enum { W_TERM, W_TASKS, W_FILES, W_SYSTEM, W_NETWORK, W_IMAGE, W_SETTING
 typedef struct { int open,min,drag; int x,y,w,h,ox,oy; APP id; char title[24]; } WIN;
 
 static SCREEN sc; static EFI_GRAPHICS_OUTPUT_PROTOCOL *gop; static EFI_SIMPLE_POINTER_PROTOCOL *mouse;
-static EFI_EVENT mouse_event,timer_event; static EFI_HANDLE source_device; static EFI_FILE_PROTOCOL *root;
+static EFI_EVENT mouse_event; static EFI_HANDLE source_device; static EFI_FILE_PROTOCOL *root;
 static EFI_HANDLE targets[MAX_TARGETS]; static UINTN target_count; static int target_pick=-1,install_result;
 static WIN wins[MAXW]; static int active=-1,start_open,start_pick; static int mx,my,left_old; static int light; static UINT32 mouse_scale=2;
 static UINT64 ram_bytes; static UINTN disks; static EFI_STATUS net_status; static CHAR8 lines[MAX_LINES][COLS]; static int line_count;
@@ -60,7 +60,7 @@ static void files_scan(void){if(!root)return;file_count=0;uefi_call_wrapper(root
 static void discover_targets(void){target_count=0;target_pick=-1;UINTN sz=0;if(uefi_call_wrapper(BS->LocateHandle,5,ByProtocol,&gEfiSimpleFileSystemProtocolGuid,NULL,&sz,NULL)!=EFI_BUFFER_TOO_SMALL)return;EFI_HANDLE*h=AllocatePool(sz);if(!h)return;if(!EFI_ERROR(uefi_call_wrapper(BS->LocateHandle,5,ByProtocol,&gEfiSimpleFileSystemProtocolGuid,NULL,&sz,h)))for(UINTN i=0;i<sz/sizeof(EFI_HANDLE)&&target_count<MAX_TARGETS;i++)if(h[i]!=source_device)targets[target_count++]=h[i];FreePool(h);}
 static EFI_STATUS install_selected(void){if(target_pick<0)return EFI_INVALID_PARAMETER;EFI_FILE_PROTOCOL*src=0,*tr=0,*ed=0,*bd=0,*f=0;VOID*data=0;UINTN size=0;EFI_STATUS st=steveos_fs_open_volume(source_device,&src);if(EFI_ERROR(st))return st;st=steveos_fs_read_file(src,L"\\EFI\\BOOT\\BOOTX64.EFI",&data,&size);uefi_call_wrapper(src->Close,1,src);if(EFI_ERROR(st))return st;st=steveos_fs_open_volume(targets[target_pick],&tr);if(!EFI_ERROR(st))st=uefi_call_wrapper(tr->Open,5,tr,&ed,L"EFI",EFI_FILE_MODE_READ|EFI_FILE_MODE_WRITE|EFI_FILE_MODE_CREATE,EFI_FILE_DIRECTORY);if(!EFI_ERROR(st))st=uefi_call_wrapper(ed->Open,5,ed,&bd,L"BOOT",EFI_FILE_MODE_READ|EFI_FILE_MODE_WRITE|EFI_FILE_MODE_CREATE,EFI_FILE_DIRECTORY);if(!EFI_ERROR(st))st=uefi_call_wrapper(bd->Open,5,bd,&f,L"BOOTX64.EFI",EFI_FILE_MODE_READ|EFI_FILE_MODE_WRITE|EFI_FILE_MODE_CREATE,0);if(!EFI_ERROR(st)){UINTN wr=size;st=uefi_call_wrapper(f->SetPosition,2,f,0);if(!EFI_ERROR(st))st=uefi_call_wrapper(f->Write,3,f,&wr,data);}if(f)uefi_call_wrapper(f->Close,1,f);if(bd)uefi_call_wrapper(bd->Close,1,bd);if(ed)uefi_call_wrapper(ed->Close,1,ed);if(tr)uefi_call_wrapper(tr->Close,1,tr);FreePool(data);return st;}
 
-static void termcmd(void){input[input_len]=0;addline((char*)input);if(same((char*)input,"HELP")){addline("HELP SYSINFO TASKS LS PWD DATE NET");addline("CLEAR WINDOWS REBOOT SHUTDOWN INSTALL");}else if(same((char*)input,"SYSINFO")){addline("STEVEOS SYSTEM INFORMATION");addline("MEMORY DISKS TASKS DISPLAY");}else if(same((char*)input,"TASKS")){w_open(W_TASKS);addline("TASK MANAGER OPENED");}else if(same((char*)input,"LS")){files_ready=0;w_open(W_FILES);addline("FILE MANAGER OPENED");}else if(same((char*)input,"PWD"))addline("\\");else if(same((char*)input,"NET"))addline("NETWORK DRIVER DEFERRED");else if(same((char*)input,"CLEAR"))line_count=0;else if(same((char*)input,"WINDOWS"))addline("WINDOW MANAGER ACTIVE");else if(same((char*)input,"INSTALL")){w_open(W_INSTALL);discover_targets();addline("INSTALLER OPENED");}else if(same((char*)input,"REBOOT"))uefi_call_wrapper(RT->ResetSystem,4,EfiResetCold,EFI_SUCCESS,0,NULL);else if(same((char*)input,"SHUTDOWN"))uefi_call_wrapper(RT->ResetSystem,4,EfiResetShutdown,EFI_SUCCESS,0,NULL);else if(input_len)addline("UNKNOWN COMMAND - TYPE HELP");input_len=0;input[0]=0;}
+static void termcmd(void){input[input_len]=0;addline((char*)input);if(same((char*)input,"HELP")){addline("HELP SYSINFO TASKS LS PWD DATE NET");addline("CLEAR WINDOWS REBOOT SHUTDOWN INSTALL");}else if(same((char*)input,"SYSINFO")){stats();addline("STEVEOS SYSTEM INFORMATION");addline("MEMORY DISKS TASKS DISPLAY");}else if(same((char*)input,"TASKS")){w_open(W_TASKS);addline("TASK MANAGER OPENED");}else if(same((char*)input,"LS")){files_ready=0;w_open(W_FILES);addline("FILE MANAGER OPENED");}else if(same((char*)input,"PWD"))addline("\\");else if(same((char*)input,"NET"))addline("NETWORK DRIVER DEFERRED");else if(same((char*)input,"CLEAR"))line_count=0;else if(same((char*)input,"WINDOWS"))addline("WINDOW MANAGER ACTIVE");else if(same((char*)input,"INSTALL")){w_open(W_INSTALL);discover_targets();addline("INSTALLER OPENED");}else if(same((char*)input,"REBOOT"))uefi_call_wrapper(RT->ResetSystem,4,EfiResetCold,EFI_SUCCESS,0,NULL);else if(same((char*)input,"SHUTDOWN"))uefi_call_wrapper(RT->ResetSystem,4,EfiResetShutdown,EFI_SUCCESS,0,NULL);else if(input_len)addline("UNKNOWN COMMAND - TYPE HELP");input_len=0;input[0]=0;}
 
 static int w_open(APP id){for(int i=0;i<MAXW;i++)if(wins[i].open&&wins[i].id==id){wins[i].min=0;active=i;return i;}for(int i=0;i<MAXW;i++)if(!wins[i].open){wins[i].open=1;wins[i].min=0;wins[i].drag=0;wins[i].id=id;wins[i].x=100+(i%3)*35;wins[i].y=80+(i%3)*35;wins[i].w=520;wins[i].h=340;const char*z[]={"TERMINAL","TASK MANAGER","FILES","SYSTEM INFO","NETWORK","BLEHHH VIEWER","SETTINGS","INSTALLER"};int j=0;while(z[id][j]&&j<23){wins[i].title[j]=z[id][j];j++;}wins[i].title[j]=0;active=i;return i;}return -1;}
 static void draw_term(WIN*w){RECT c={w->x,w->y+30,w->w,w->h-30};rr(c,0x070B10);for(int i=0;i<line_count;i++)txt(c.x+12,c.y+10+i*18,(char*)lines[i],0xD5DFEF,1);txt(c.x+12,c.y+c.h-27,"STEVE>",0x6F9BFF,1);txt(c.x+55,c.y+c.h-27,(char*)input,0xFFFFFF,1);}
@@ -134,9 +134,6 @@ EFI_STATUS steveos_shell_start(EFI_HANDLE ih,EFI_GRAPHICS_OUTPUT_PROTOCOL *gp){
     uefi_call_wrapper(BS->LocateProtocol,3,&sp,NULL,(VOID**)&mouse);
     if(mouse) mouse_event=mouse->WaitForInput;
 
-    uefi_call_wrapper(BS->CreateEvent,5,EVT_TIMER,TPL_CALLBACK,NULL,NULL,&timer_event);
-    if(timer_event) uefi_call_wrapper(BS->SetTimer,3,timer_event,TimerPeriodic,200000);
-
     steveos_tasks_init();
     if(steveos_task_count()==0) steveos_task_create((UINT64)(UINTN)&steveos_shell_start);
     net_status=EFI_UNSUPPORTED;
@@ -145,21 +142,17 @@ EFI_STATUS steveos_shell_start(EFI_HANDLE ih,EFI_GRAPHICS_OUTPUT_PROTOCOL *gp){
     addline("STEVEOS TERMINAL READY");
     addline("TYPE HELP FOR COMMANDS");
 
-    /* First frame is rendered before any optional firmware query. */
-    redraw();
-    stats();
+    /* Show the first desktop frame before optional firmware queries. */
     redraw();
 
-    EFI_EVENT ev[3];
+    EFI_EVENT ev[2];
     UINTN ec=0;
     ev[ec++]=ST->ConIn->WaitForKey;
     if(mouse_event) ev[ec++]=mouse_event;
-    if(timer_event) ev[ec++]=timer_event;
     for(;;){
         UINTN ix=0;
         if(EFI_ERROR(uefi_call_wrapper(BS->WaitForEvent,3,ec,ev,&ix)))continue;
         if(mouse_event&&ix==1){motion();continue;}
-        if(timer_event&&ix==ec-1){stats();redraw();continue;}
         EFI_INPUT_KEY k;
         if(!EFI_ERROR(uefi_call_wrapper(ST->ConIn->ReadKeyStroke,2,ST->ConIn,&k)))keyboard(k);
     }
