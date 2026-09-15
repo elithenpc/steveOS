@@ -2,11 +2,14 @@ CC ?= gcc
 LD ?= ld
 OBJCOPY ?= objcopy
 
+# Debian/Ubuntu install GNU-EFI's x86_64 files in the multiarch lib directory.
+GNU_EFI_LIBDIR ?= /usr/lib/$(shell dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null || echo x86_64-linux-gnu)
+
 CFLAGS := -I/usr/include/efi -I/usr/include/efi/x86_64 \
           -fpic -ffreestanding -fno-stack-protector -fno-stack-check \
           -fshort-wchar -mno-red-zone -maccumulate-outgoing-args
-LDFLAGS := -nostdlib -znocombreloc -T /usr/lib/elf_x86_64_efi.lds \
-           -shared -Bsymbolic -L/usr/lib /usr/lib/crt0-efi-x86_64.o
+LDFLAGS := -nostdlib -znocombreloc -T $(GNU_EFI_LIBDIR)/elf_x86_64_efi.lds \
+           -shared -Bsymbolic -L$(GNU_EFI_LIBDIR) $(GNU_EFI_LIBDIR)/crt0-efi-x86_64.o
 OBJCOPY_FLAGS := -j .text -j .sdata -j .data -j .dynamic -j .dynsym \
                  -j .rel -j .rela -j .reloc --target=efi-app-x86_64
 
