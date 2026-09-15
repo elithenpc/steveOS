@@ -1,16 +1,16 @@
 #include <efi.h>
 #include <efilib.h>
 #include "bootlog.h"
-#include "shell.h"
+#include "kernel.h"
 
 EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_table) {
     InitializeLib(image_handle, system_table);
-    Print(L"\r\nSTEVEOS: UEFI entry\r\n");
+    Print(L"\r\nSTEVEOS: bootloader entry\r\n");
 
     EFI_GRAPHICS_OUTPUT_PROTOCOL *gop = NULL;
     EFI_STATUS status = uefi_call_wrapper(BS->LocateProtocol, 3,
-                                           &gEfiGraphicsOutputProtocolGuid,
-                                           NULL, (VOID **)&gop);
+                                          &gEfiGraphicsOutputProtocolGuid,
+                                          NULL, (VOID **)&gop);
     if (EFI_ERROR(status) || !gop) {
         Print(L"STEVEOS: ERROR locating GOP: %r\r\n", status);
         return status;
@@ -31,6 +31,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_tab
             best_area = area;
             best_mode = mode;
         }
+        FreePool(info);
     }
 
     Print(L"STEVEOS: setting graphics mode %u\r\n", best_mode);
@@ -46,6 +47,12 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_tab
         return status;
     }
 
-    Print(L"STEVEOS: launching desktop shell\r\n");
-    return steveos_shell_start(image_handle, gop);
+    Print(L"STEVEOS: loading native kernel\r\n");
+    status = steveos_kernel_boot(image_handle, gop);
+    if (EFI_ERROR(status)) {
+        Print(L"STEVEOS: NATIVE KERNEL BOOT FAILED: %r\r\n", status);
+        return status;
+    }
+
+    return EFI_SUCCESS;
 }
