@@ -1,27 +1,27 @@
 #include <efi.h>
 #include <efilib.h>
 #include <stdint.h>
+#include "network.h"
 
 /*
- * Early steveOS networking uses the firmware's UEFI HTTP stack.
- * This gives us real network access without dragging a full TCP/IP stack
- * into the first bootable build. Later the OS can replace this with its own
- * Ethernet/Wi-Fi, IP, DNS, TCP and TLS drivers.
+ * Early steveOS networking uses UEFI's HTTP stack. Firmware handles the
+ * network adapter, DHCP, IP routing and DNS for this first stage.
  */
 
 static EFI_HTTP_PROTOCOL *http = NULL;
 static EFI_HANDLE http_child = NULL;
+static EFI_HTTP_SERVICE_BINDING_PROTOCOL *http_binding = NULL;
 
 static EFI_STATUS network_start(void) {
     EFI_STATUS status;
-    EFI_HTTP_SERVICE_BINDING_PROTOCOL *binding = NULL;
 
     status = uefi_call_wrapper(BS->LocateProtocol, 3,
                                &gEfiHttpServiceBindingProtocolGuid,
-                               NULL, (void **)&binding);
-    if (EFI_ERROR(status) || !binding) return status;
+                               NULL, (void **)&http_binding);
+    if (EFI_ERROR(status) || !http_binding) return status;
 
-    status = uefi_call_wrapper(binding->CreateChild, 2, binding, &http_child);
+    status = uefi_call_wrapper(http_binding->CreateChild, 2,
+                               http_binding, &http_child);
     if (EFI_ERROR(status)) return status;
 
     status = uefi_call_wrapper(BS->HandleProtocol, 3,
@@ -29,14 +29,24 @@ static EFI_STATUS network_start(void) {
                                (void **)&http);
     if (EFI_ERROR(status) || !http) return status;
 
+    EFI_HTTPv4_ACCESS_POINT ipv4;
+    SetMem(&ipv4, sizeof(ipv4), 0);
+    ipv4.UseDefaultAddress = TRUE;
+
     EFI_HTTP_CONFIG_DATA config;
     SetMem(&config, sizeof(config), 0);
     config.HttpVersion = HttpVersion11;
     config.TimeOutMillisec = 10000;
     config.LocalAddressIsIPv6 = FALSE;
-    config.AccessPoint.IPv4Node = NULL;
+    config.AccessPoint.IPv4Node = &ipv4;
 
-    return uefi_call_wrapper(http->Configure, 2, http, &config);
+    status = uefi_call_wrapper(http->Configure, 2, http, &config);
+    if (EFI_ERROR(status)) {
+        uefi_call_wrapper(http_binding->DestroyChild, 2, http_binding, http_child);
+        http = NULL;
+        http_child = NULL;
+    }
+    return status;
 }
 
 static void network_stop(void) {
@@ -45,21 +55,15 @@ static void network_stop(void) {
         http = NULL;
     }
 
-    if (http_child) {
-        EFI_HTTP_SERVICE_BINDING_PROTOCOL *binding = NULL;
-        if (!EFI_ERROR(uefi_call_wrapper(BS->LocateProtocol, 3,
-                                         &gEfiHttpServiceBindingProtocolGuid,
-                                         NULL, (void **)&binding)) && binding) {
-            uefi_call_wrapper(binding->DestroyChild, 2, binding, http_child);
-        }
-        http_child = NULL;
+    if (http_child && http_binding) {
+        uefi_call_wrapper(http_binding->DestroyChild, 2,
+                          http_binding, http_child);
     }
+
+    http_child = NULL;
+    http_binding = NULL;
 }
 
-/*
- * Fetch a small HTTP page to prove the machine can reach the internet.
- * Returns EFI_SUCCESS when the HTTP transaction completes successfully.
- */
 EFI_STATUS steveos_http_test(void) {
     EFI_STATUS status;
     EFI_HTTP_TOKEN request_token;
@@ -68,7 +72,6 @@ EFI_STATUS steveos_http_test(void) {
     EFI_HTTP_MESSAGE request_message;
     EFI_HTTP_MESSAGE response_message;
     EFI_HTTP_HEADER request_header;
-    EFI_HTTP_HEADER *response_headers = NULL;
     CHAR8 url[] = "http://example.com/";
     CHAR8 host[] = "example.com";
     UINT8 response_buffer[1024];
@@ -98,16 +101,16 @@ EFI_STATUS steveos_http_test(void) {
         return status;
     }
 
-    while (request_token.Status == EFI_NOT_READY) {
+    while (request_token.Status == EFI_NOT_READY)
         uefi_call_wrapper(http->Poll, 2, http);
-    }
+
     if (EFI_ERROR(request_token.Status)) {
+        status = request_token.Status;
         network_stop();
-        return request_token.Status;
+        return status;
     }
 
     SetMem(&response_message, sizeof(response_message), 0);
-    response_message.Headers = response_headers;
     response_message.Body = response_buffer;
     response_message.BodyLength = sizeof(response_buffer) - 1;
 
@@ -120,9 +123,8 @@ EFI_STATUS steveos_http_test(void) {
         return status;
     }
 
-    while (response_token.Status == EFI_NOT_READY) {
+    while (response_token.Status == EFI_NOT_READY)
         uefi_call_wrapper(http->Poll, 2, http);
-    }
 
     status = response_token.Status;
     network_stop();
