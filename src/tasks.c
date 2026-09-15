@@ -1,3 +1,5 @@
+#include <efi.h>
+#include <efilib.h>
 #include "tasks.h"
 
 static STEVEOS_TASK tasks[STEVEOS_MAX_TASKS];
@@ -17,6 +19,8 @@ EFI_STATUS steveos_task_create(UINT64 entry_point) {
     task->id = task_count_value + 1;
     task->state = STEVEOS_TASK_READY;
     task->instruction_pointer = entry_point;
+    task->stack_base = 0;
+    task->stack_size = 0;
     task_count_value++;
     return EFI_SUCCESS;
 }
