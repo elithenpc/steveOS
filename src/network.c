@@ -2,11 +2,19 @@
 #include <efilib.h>
 #include "network.h"
 
-/* UEFI HTTP protocol GUIDs. */
+/* UEFI HTTP protocol GUIDs from the UEFI specification. */
 static EFI_GUID http_service_binding_guid =
     {0xbdc8e6af, 0xd9bc, 0x4379, {0xa7, 0x2a, 0xe0, 0xc4, 0xe7, 0x5d, 0xae, 0x1c}};
 static EFI_GUID http_protocol_guid =
     {0x7a59b29b, 0x910b, 0x4171, {0x82, 0x42, 0xa8, 0x5a, 0x0d, 0xf2, 0x5b, 0x5b}};
+
+typedef struct _STEVEOS_SERVICE_BINDING STEVEOS_SERVICE_BINDING;
+typedef EFI_STATUS (EFIAPI *STEVEOS_CREATE_CHILD)(STEVEOS_SERVICE_BINDING *This, EFI_HANDLE *ChildHandle);
+typedef EFI_STATUS (EFIAPI *STEVEOS_DESTROY_CHILD)(STEVEOS_SERVICE_BINDING *This, EFI_HANDLE ChildHandle);
+struct _STEVEOS_SERVICE_BINDING {
+    STEVEOS_CREATE_CHILD CreateChild;
+    STEVEOS_DESTROY_CHILD DestroyChild;
+};
 
 typedef enum {
     HttpVersion10,
@@ -79,20 +87,17 @@ typedef struct {
     STEVEOS_HTTP_MESSAGE *Message;
 } STEVEOS_HTTP_TOKEN;
 
-typedef EFI_STATUS (EFIAPI *STEVEOS_HTTP_GET_MODE_DATA)(VOID *This, STEVEOS_HTTP_CONFIG_DATA *ConfigData);
 typedef EFI_STATUS (EFIAPI *STEVEOS_HTTP_CONFIGURE)(VOID *This, STEVEOS_HTTP_CONFIG_DATA *ConfigData);
 typedef EFI_STATUS (EFIAPI *STEVEOS_HTTP_REQUEST)(VOID *This, STEVEOS_HTTP_TOKEN *Token);
-typedef EFI_STATUS (EFIAPI *STEVEOS_HTTP_CANCEL)(VOID *This, STEVEOS_HTTP_TOKEN *Token);
 typedef EFI_STATUS (EFIAPI *STEVEOS_HTTP_RESPONSE)(VOID *This, STEVEOS_HTTP_TOKEN *Token);
-typedef EFI_STATUS (EFIAPI *STEVEOS_HTTP_POLL)(VOID *This);
 
 typedef struct {
-    STEVEOS_HTTP_GET_MODE_DATA GetModeData;
+    VOID *GetModeData;
     STEVEOS_HTTP_CONFIGURE Configure;
     STEVEOS_HTTP_REQUEST Request;
-    STEVEOS_HTTP_CANCEL Cancel;
+    VOID *Cancel;
     STEVEOS_HTTP_RESPONSE Response;
-    STEVEOS_HTTP_POLL Poll;
+    VOID *Poll;
 } STEVEOS_HTTP_PROTOCOL;
 
 static volatile BOOLEAN request_done;
@@ -116,7 +121,7 @@ EFI_STATUS steveos_network_available(void) {
 }
 
 EFI_STATUS steveos_http_test(void) {
-    EFI_SERVICE_BINDING_PROTOCOL *binding = NULL;
+    STEVEOS_SERVICE_BINDING *binding = NULL;
     EFI_STATUS st = uefi_call_wrapper(BS->LocateProtocol, 3,
                                       &http_service_binding_guid,
                                       NULL, (VOID **)&binding);
@@ -136,7 +141,7 @@ EFI_STATUS steveos_http_get(const CHAR16 *url,
     if (http_status)
         *http_status = 0;
 
-    EFI_SERVICE_BINDING_PROTOCOL *binding = NULL;
+    STEVEOS_SERVICE_BINDING *binding = NULL;
     EFI_HANDLE child = NULL;
     STEVEOS_HTTP_PROTOCOL *http = NULL;
     EFI_EVENT request_event = NULL;
@@ -170,8 +175,7 @@ EFI_STATUS steveos_http_get(const CHAR16 *url,
     config.LocalAddressIsIPv6 = FALSE;
     config.AccessPoint.IPv4Node = &ipv4;
 
-    st = uefi_call_wrapper((EFI_STATUS (EFIAPI *)(VOID *, VOID *))http->Configure,
-                           2, http, &config);
+    st = uefi_call_wrapper(http->Configure, 2, http, &config);
     if (EFI_ERROR(st))
         goto cleanup;
 
@@ -213,8 +217,6 @@ EFI_STATUS steveos_http_get(const CHAR16 *url,
     ZeroMem(&resp_msg, sizeof(resp_msg));
     ZeroMem(&resp_token, sizeof(resp_token));
     resp_msg.Data.Response = &resp_data;
-    resp_msg.HeaderCount = 0;
-    resp_msg.Headers = NULL;
     resp_msg.BodyLength = out_capacity - 1;
     resp_msg.Body = out;
     resp_token.Message = &resp_msg;
@@ -251,7 +253,7 @@ cleanup:
     if (request_event)
         uefi_call_wrapper(BS->CloseEvent, 1, request_event);
     if (http)
-        uefi_call_wrapper((EFI_HTTP_CONFIGURE)http->Configure, 2, http, NULL);
+        uefi_call_wrapper(http->Configure, 2, http, NULL);
     if (binding && child)
         uefi_call_wrapper(binding->DestroyChild, 2, binding, child);
     return st;
