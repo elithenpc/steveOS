@@ -23,5 +23,6 @@ typedef struct {
 EFI_STATUS steveos_tasks_init(void);
 EFI_STATUS steveos_task_create(UINT64 entry_point);
 UINT32 steveos_task_count(void);
+EFI_STATUS steveos_task_get(UINT32 index, STEVEOS_TASK *task);
 
 #endif
