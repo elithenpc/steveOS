@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include "../src/bootinfo.h"
+#include "usb.h"
 
 extern void native_default_isr(void);
 
@@ -164,13 +165,34 @@ static void cursor_xor(void) {
         0xE0,0xA0,0x80,0x00,0x00,0x00,0x00,0x00
     };
     if (!mouse_fb) return;
-    for (int y = 0; y < 16; ++y)
-        for (int x = 0; x < 8; ++x)
-            if (shape[y] & (uint8_t)(0x80u >> x)) {
-                uint32_t *p = &mouse_fb[(uint64_t)(mouse_y + y) * mouse_stride + mouse_x + (uint32_t)x];
-                if (mouse_x + (uint32_t)x < mouse_width && mouse_y + (uint32_t)y < mouse_height)
-                    *p ^= 0x00FFFFFFU;
-            }
+    for (int y = 0; y < 16; ++y) {
+        uint32_t py = mouse_y + (uint32_t)y;
+        if (py >= mouse_height) continue;
+        for (int x = 0; x < 8; ++x) {
+            uint32_t px = mouse_x + (uint32_t)x;
+            if (px >= mouse_width) continue;
+            if (shape[y] & (uint8_t)(0x80u >> x))
+                mouse_fb[(uint64_t)py * mouse_stride + px] ^= 0x00FFFFFFU;
+        }
+    }
+}
+
+void native_pointer_move(int32_t dx, int32_t dy, uint8_t buttons) {
+    (void)buttons;
+    if (!mouse_fb || !mouse_width || !mouse_height)
+        return;
+
+    int32_t nx = (int32_t)mouse_x + dx;
+    int32_t ny = (int32_t)mouse_y + dy;
+    if (nx < 0) nx = 0;
+    if (ny < 0) ny = 0;
+    if (nx >= (int32_t)mouse_width) nx = (int32_t)mouse_width - 1;
+    if (ny >= (int32_t)mouse_height) ny = (int32_t)mouse_height - 1;
+
+    cursor_xor();
+    mouse_x = (uint32_t)nx;
+    mouse_y = (uint32_t)ny;
+    cursor_xor();
 }
 
 void native_input_bind(const STEVEOS_BOOT_INFO *boot) {
@@ -181,16 +203,25 @@ void native_input_bind(const STEVEOS_BOOT_INFO *boot) {
     mouse_stride = (uint32_t)boot->pixels_per_scanline;
     mouse_x = mouse_width / 2;
     mouse_y = mouse_height / 2;
-    mouse_present = (uint8_t)ps2_mouse_init();
+
+    /* xHCI is the primary native path for USB mice. The old i8042 path stays
+     * as a fallback for machines whose pointing device is exposed as PS/2. */
+    mouse_present = (uint8_t)native_usb_init();
+    if (!mouse_present)
+        mouse_present = (uint8_t)ps2_mouse_init();
+
     if (mouse_present)
         cursor_xor();
 }
 
 static void native_mouse_poll(void) {
+    native_usb_poll();
+    if (native_usb_mouse_present())
+        return;
+    if (!mouse_present) return;
+
     static uint8_t packet[3];
     static uint8_t index;
-
-    if (!mouse_present) return;
 
     while (inb(0x64) & 1) {
         uint8_t status = inb(0x64);
@@ -214,17 +245,7 @@ static void native_mouse_poll(void) {
         if (packet[0] & 0xC0)
             continue;
 
-        int32_t nx = (int32_t)mouse_x + (int8_t)packet[1];
-        int32_t ny = (int32_t)mouse_y - (int8_t)packet[2];
-        if (nx < 0) nx = 0;
-        if (ny < 0) ny = 0;
-        if (nx >= (int32_t)mouse_width) nx = (int32_t)mouse_width - 1;
-        if (ny >= (int32_t)mouse_height) ny = (int32_t)mouse_height - 1;
-
-        cursor_xor();
-        mouse_x = (uint32_t)nx;
-        mouse_y = (uint32_t)ny;
-        cursor_xor();
+        native_pointer_move((int8_t)packet[1], -(int8_t)packet[2], packet[0] & 7u);
     }
 }
 
