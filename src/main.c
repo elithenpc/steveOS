@@ -1,16 +1,21 @@
 #include <efi.h>
 #include <efilib.h>
+#include "bootlog.h"
 #include "shell.h"
 
 EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_table) {
     InitializeLib(image_handle, system_table);
+    Print(L"\r\nSTEVEOS: UEFI entry\r\n");
 
     EFI_GRAPHICS_OUTPUT_PROTOCOL *gop = NULL;
     EFI_STATUS status = uefi_call_wrapper(BS->LocateProtocol, 3,
                                            &gEfiGraphicsOutputProtocolGuid,
                                            NULL, (VOID **)&gop);
-    if (EFI_ERROR(status) || !gop)
+    if (EFI_ERROR(status) || !gop) {
+        Print(L"STEVEOS: ERROR locating GOP: %r\r\n", status);
         return status;
+    }
+    Print(L"STEVEOS: GOP found\r\n");
 
     UINT32 best_mode = gop->Mode->Mode;
     UINT64 best_area = 0;
@@ -28,8 +33,19 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_tab
         }
     }
 
-    uefi_call_wrapper(gop->SetMode, 2, gop, best_mode);
-    gop->Mode->Info->HorizontalResolution;
+    Print(L"STEVEOS: setting graphics mode %u\r\n", best_mode);
+    status = uefi_call_wrapper(gop->SetMode, 2, gop, best_mode);
+    if (EFI_ERROR(status)) {
+        Print(L"STEVEOS: ERROR setting graphics mode: %r\r\n", status);
+        return status;
+    }
 
+    status = steveos_boot_diagnostics(image_handle, gop);
+    if (EFI_ERROR(status)) {
+        Print(L"STEVEOS: BOOT DIAGNOSTICS FAILED: %r\r\n", status);
+        return status;
+    }
+
+    Print(L"STEVEOS: launching desktop shell\r\n");
     return steveos_shell_start(image_handle, gop);
 }
