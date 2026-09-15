@@ -57,33 +57,37 @@ build/fs.o: src/fs.c src/fs.h
 
 build/installer.o: src/installer.c src/installer.h src/fs.h
 	mkdir -p build
-	$(CC) $(CFLAGS) -c src/installer.c -o $@
+	$(CC) $(CFLAGS) -c $< -o $@
 
 build/kernel.o: src/kernel.c src/kernel.h src/bootinfo.h
 	mkdir -p build
-	$(CC) $(CFLAGS) -c src/kernel.c -o $@
+	$(CC) $(CFLAGS) -c $< -o $@
 
 build/interrupts.o: src/interrupts.c src/interrupts.h
 	mkdir -p build
-	$(CC) $(CFLAGS) -c src/interrupts.c -o $@
+	$(CC) $(CFLAGS) -c $< -o $@
 
 build/tasks.o: src/tasks.c src/tasks.h
 	mkdir -p build
-	$(CC) $(CFLAGS) -c src/tasks.c -o $@
+	$(CC) $(CFLAGS) -c $< -o $@
 
 build/native-kernel-entry.o: kernel/entry.S
 	mkdir -p build
 	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
 
-build/native-kernel-arch.o: kernel/arch.c src/bootinfo.h
+build/native-kernel-arch.o: kernel/arch.c kernel/usb.h src/bootinfo.h
 	mkdir -p build
-	$(CC) $(KERNEL_CFLAGS) -c kernel/arch.c -o $@
+	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
+
+build/native-kernel-usb.o: kernel/usb.c kernel/usb.h
+	mkdir -p build
+	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
 
 build/native-kernel-main.o: kernel/main.c src/bootinfo.h build/boot.raw.o
 	mkdir -p build
-	$(CC) $(KERNEL_CFLAGS) -c kernel/main.c -o $@
+	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
 
-build/native_kernel.elf: build/native-kernel-entry.o build/native-kernel-main.o build/native-kernel-arch.o build/boot.raw.o
+build/native_kernel.elf: build/native-kernel-entry.o build/native-kernel-main.o build/native-kernel-arch.o build/native-kernel-usb.o build/boot.raw.o
 	$(LD) -T kernel/linker.ld -o $@ $^
 
 build/native_kernel.raw: build/native_kernel.elf
