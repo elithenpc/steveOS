@@ -57,7 +57,7 @@ static void fill_rect(int x, int y, int w, int h, uint32_t colour) {
 }
 
 /* Tiny 5x7 font for the desktop UI. */
-static const uint8_t font[27][7] = {
+static const uint8_t font[26][7] = {
     {14,17,17,31,17,17,17}, {30,17,17,30,17,17,30}, {14,17,16,16,16,17,14},
     {30,17,17,17,17,17,30}, {31,16,16,30,16,16,31}, {31,16,16,30,16,16,16},
     {14,17,16,23,17,17,14}, {17,17,17,31,17,17,17}, {14,4,4,4,4,4,14},
@@ -66,15 +66,13 @@ static const uint8_t font[27][7] = {
     {30,17,17,30,16,16,16}, {14,17,17,17,21,18,13}, {30,17,17,30,20,18,17},
     {15,16,16,14,1,1,30}, {31,4,4,4,4,4,4}, {17,17,17,17,17,17,14},
     {17,17,17,17,17,10,4}, {17,17,17,21,21,21,10}, {17,17,10,4,10,17,17},
-    {17,17,10,4,4,4,4}, {31,1,2,4,8,16,31}, {0,0,0,0,0,0,0}
+    {17,17,10,4,4,4,4}, {31,1,2,4,8,16,31}
 };
 
 static void draw_char(int x, int y, char c, int scale, uint32_t colour) {
     if (c == ' ') return;
-    int index = -1;
-    if (c >= 'A' && c <= 'Z') index = c - 'A';
-    if (c == '!' ) index = 26;
-    if (index < 0 || index >= 27) return;
+    if (c < 'A' || c > 'Z') return;
+    int index = c - 'A';
     for (int row = 0; row < 7; row++) {
         for (int col = 0; col < 5; col++) {
             if (font[index][row] & (1 << (4 - col)))
@@ -125,14 +123,12 @@ static void draw_image(void) {
 }
 
 static void draw_desktop(void) {
-    /* Dark desktop background. */
     fill_rect(0, 0, screen.w, screen.h, pack_pixel(screen.format, screen.mask, 24, 30, 42));
 
     draw_text(32, 28, "STEVEOS", 5, pack_pixel(screen.format, screen.mask, 255, 255, 255));
     draw_text(32, 78, "PRESS S TO OPEN START", 2,
               pack_pixel(screen.format, screen.mask, 190, 200, 215));
 
-    /* Taskbar. */
     fill_rect(0, (int)screen.h - 64, screen.w, 64,
               pack_pixel(screen.format, screen.mask, 18, 22, 32));
     fill_rect(12, (int)screen.h - 52, 150, 40,
@@ -143,7 +139,7 @@ static void draw_desktop(void) {
 
 static void draw_start_menu(int selected) {
     int menu_w = 360;
-    int menu_h = 180;
+    int menu_h = 200;
     int x = 12;
     int y = (int)screen.h - 64 - menu_h - 8;
     uint32_t panel = pack_pixel(screen.format, screen.mask, 30, 36, 50);
@@ -157,12 +153,12 @@ static void draw_start_menu(int selected) {
     draw_text(x + 24, y + 18, "STEVEOS", 3, white);
     draw_text(x + 24, y + 48, "APPS", 2, muted);
 
-    if (selected == 0) fill_rect(x + 14, y + 75, menu_w - 28, 48, highlight);
-    draw_text(x + 30, y + 86, "BLEHHH", 3, white);
-    draw_text(x + 30, y + 128, "OPEN THE PICTURE", 2, muted);
+    if (selected == 0) fill_rect(x + 14, y + 72, menu_w - 28, 48, highlight);
+    draw_text(x + 30, y + 82, "BLEHHH", 3, white);
+    draw_text(x + 30, y + 106, "OPEN THE PICTURE", 1, muted);
 
-    if (selected == 1) fill_rect(x + 14, y + 75, menu_w - 28, 48, highlight);
-    draw_text(x + 30, y + 140, "SHUT DOWN", 2, muted);
+    if (selected == 1) fill_rect(x + 14, y + 126, menu_w - 28, 48, highlight);
+    draw_text(x + 30, y + 138, "SHUT DOWN", 2, white);
 }
 
 static void redraw(int start_open, int selected) {
@@ -220,10 +216,10 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_tab
 
         if (!start_open) continue;
 
-        if (key.ScanCode == SCAN_UP || key.UnicodeChar == 'w' || key.UnicodeChar == 'W') {
+        if (key.ScanCode == SCAN_UP) {
             selected = 0;
             redraw(1, selected);
-        } else if (key.ScanCode == SCAN_DOWN || key.UnicodeChar == 'd' || key.UnicodeChar == 'D') {
+        } else if (key.ScanCode == SCAN_DOWN) {
             selected = 1;
             redraw(1, selected);
         } else if (key.ScanCode == SCAN_ESC) {
@@ -233,7 +229,6 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_tab
             if (selected == 0) {
                 draw_image();
                 start_open = 0;
-                /* Any key returns to the desktop after viewing the image. */
                 while (1) {
                     status = uefi_call_wrapper(BS->WaitForEvent, 3, 1, &ST->ConIn->WaitForKey, NULL);
                     if (EFI_ERROR(status)) continue;
