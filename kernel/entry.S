@@ -3,6 +3,7 @@
 .extern native_gdt_init
 .extern native_paging_init
 .extern native_idt_init
+.extern native_input_bind
 .extern kernel_main
 
 _start:
@@ -15,6 +16,9 @@ _start:
     mov %r12, %rdi
     call native_paging_init
     call native_idt_init
+
+    mov %r12, %rdi
+    call native_input_bind
 
     mov %r12, %rdi
     call kernel_main
