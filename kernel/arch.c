@@ -32,6 +32,14 @@ static uint64_t gdt[3] __attribute__((aligned(8))) = {
 static IDT_GATE idt[256] __attribute__((aligned(16)));
 static uint64_t page_tables[1024] __attribute__((aligned(4096))) = {0};
 
+static uint32_t *mouse_fb;
+static uint32_t mouse_width;
+static uint32_t mouse_height;
+static uint32_t mouse_stride;
+static uint32_t mouse_x;
+static uint32_t mouse_y;
+static uint8_t mouse_present;
+
 static void load_gdt(void) {
     GDTR gdtr = { (uint16_t)(sizeof(gdt) - 1), (uint64_t)gdt };
     __asm__ __volatile__("lgdt %0" : : "m"(gdtr));
@@ -72,6 +80,7 @@ void native_idt_init(void) {
 }
 
 void native_paging_init(const STEVEOS_BOOT_INFO *boot) {
+    (void)boot;
     for (int i = 0; i < 512; ++i) {
         page_tables[i] = 0;
         page_tables[512 + i] = ((uint64_t)i << 30) | 0x83ULL;
@@ -79,13 +88,6 @@ void native_paging_init(const STEVEOS_BOOT_INFO *boot) {
 
     uintptr_t pml4 = (uintptr_t)&page_tables[0];
     uintptr_t pdpt = (uintptr_t)&page_tables[512];
-    if (boot) {
-        uintptr_t image_base = (uintptr_t)boot->kernel_base;
-        uintptr_t local_base = (uintptr_t)&page_tables[0];
-        pml4 = image_base + (local_base - image_base);
-        pdpt = pml4 + ((uintptr_t)&page_tables[512] - local_base);
-    }
-
     page_tables[0] = (uint64_t)pdpt | 0x03ULL;
     __asm__ __volatile__("mov %0, %%cr3" : : "r"(pml4) : "memory");
 }
@@ -135,7 +137,7 @@ static int ps2_send_mouse(uint8_t command) {
     return ps2_read_byte(&ack) && ack == 0xFA;
 }
 
-int native_mouse_init(void) {
+static int ps2_mouse_init(void) {
     uint8_t status;
     if (!wait_input_clear()) return 0;
     outb(0x64, 0xA8);
@@ -151,15 +153,44 @@ int native_mouse_init(void) {
     if (!wait_input_clear()) return 0;
     outb(0x60, status);
 
-    ps2_send_mouse(0xF6);
-    ps2_send_mouse(0xF4);
+    if (!ps2_send_mouse(0xF6)) return 0;
+    if (!ps2_send_mouse(0xF4)) return 0;
     return 1;
 }
 
-int native_mouse_read_packet(int8_t *dx, int8_t *dy, uint8_t *buttons) {
+static void cursor_xor(void) {
+    static const uint8_t shape[16] = {
+        0x80,0xC0,0xE0,0xF0,0xF8,0xFC,0xFE,0xFF,
+        0xE0,0xA0,0x80,0x00,0x00,0x00,0x00,0x00
+    };
+    if (!mouse_fb) return;
+    for (int y = 0; y < 16; ++y)
+        for (int x = 0; x < 8; ++x)
+            if (shape[y] & (uint8_t)(0x80u >> x)) {
+                uint32_t *p = &mouse_fb[(uint64_t)(mouse_y + y) * mouse_stride + mouse_x + (uint32_t)x];
+                if (mouse_x + (uint32_t)x < mouse_width && mouse_y + (uint32_t)y < mouse_height)
+                    *p ^= 0x00FFFFFFU;
+            }
+}
+
+void native_input_bind(const STEVEOS_BOOT_INFO *boot) {
+    if (!boot) return;
+    mouse_fb = (uint32_t *)(uintptr_t)boot->framebuffer_base;
+    mouse_width = (uint32_t)boot->width;
+    mouse_height = (uint32_t)boot->height;
+    mouse_stride = (uint32_t)boot->pixels_per_scanline;
+    mouse_x = mouse_width / 2;
+    mouse_y = mouse_height / 2;
+    mouse_present = (uint8_t)ps2_mouse_init();
+    if (mouse_present)
+        cursor_xor();
+}
+
+static void native_mouse_poll(void) {
     static uint8_t packet[3];
     static uint8_t index;
-    static uint8_t button_state;
+
+    if (!mouse_present) return;
 
     while (inb(0x64) & 1) {
         uint8_t status = inb(0x64);
@@ -180,26 +211,33 @@ int native_mouse_read_packet(int8_t *dx, int8_t *dy, uint8_t *buttons) {
             continue;
 
         index = 0;
-        if ((packet[0] & 0xC0) != 0)
+        if (packet[0] & 0xC0)
             continue;
 
-        button_state = packet[0] & 0x07;
-        *dx = (int8_t)packet[1];
-        *dy = -(int8_t)packet[2];
-        *buttons = button_state;
-        return 1;
+        int32_t nx = (int32_t)mouse_x + (int8_t)packet[1];
+        int32_t ny = (int32_t)mouse_y - (int8_t)packet[2];
+        if (nx < 0) nx = 0;
+        if (ny < 0) ny = 0;
+        if (nx >= (int32_t)mouse_width) nx = (int32_t)mouse_width - 1;
+        if (ny >= (int32_t)mouse_height) ny = (int32_t)mouse_height - 1;
+
+        cursor_xor();
+        mouse_x = (uint32_t)nx;
+        mouse_y = (uint32_t)ny;
+        cursor_xor();
     }
-    return 0;
 }
 
 uint8_t native_keyboard_read_scancode(void) {
-    while (inb(0x64) & 1) {
-        uint8_t status = inb(0x64);
-        uint8_t value = inb(0x60);
-        if (!(status & 0x20))
-            return value;
-    }
-    return 0;
+    native_mouse_poll();
+    if (!(inb(0x64) & 1))
+        return 0;
+
+    uint8_t status = inb(0x64);
+    uint8_t value = inb(0x60);
+    if (status & 0x20)
+        return 0;
+    return value;
 }
 
 void native_reboot(void) {
