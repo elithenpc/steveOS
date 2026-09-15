@@ -12,6 +12,7 @@ static UINT32 width;
 static UINT32 height;
 static UINT32 stride;
 static UINTN row;
+static UINTN steps;
 
 static void px(int x, int y, UINT32 c) {
     if (x >= 0 && y >= 0 && (UINT32)x < width && (UINT32)y < height)
@@ -24,13 +25,20 @@ static void rect(int x, int y, int w, int h, UINT32 c) {
             px(x + xx, y + yy, c);
 }
 
+static void circle(int cx, int cy, int r, UINT32 c) {
+    for (int y = -r; y <= r; ++y)
+        for (int x = -r; x <= r; ++x)
+            if (x*x + y*y <= r*r)
+                px(cx + x, cy + y, c);
+}
+
 static const UINT8 font[36][5] = {
     {0x7e,0x11,0x11,0x7e,0},{0x7f,0x49,0x49,0x36,0},{0x3e,0x41,0x41,0x22,0},{0x7f,0x41,0x41,0x3e,0},
     {0x7f,0x49,0x49,0x41,0},{0x7f,0x09,0x09,0x01,0},{0x3e,0x41,0x51,0x72,0},{0x7f,0x08,0x08,0x7f,0},
     {0,0x41,0x7f,0x41,0},{0x20,0x40,0x41,0x3f,0},{0x7f,0x08,0x14,0x63,0},{0x7f,0x40,0x40,0x40,0},
     {0x7f,0x06,0x18,0x06,0x7f},{0x7f,0x06,0x18,0x7f,0},{0x3e,0x41,0x41,0x3e,0},{0x7f,0x09,0x09,0x06,0},
     {0x3e,0x41,0x61,0x7e,0},{0x7f,0x09,0x19,0x66,0},{0x26,0x49,0x49,0x32,0},{1,0x7f,1,1,0},
-    {0x3f,0x40,0x40,0x3f,0},{0x1f,0x60,0x60,0x1f,0},{0x7f,0x30,0x0c,0x30,0x7f},{0x63,0x14,8,0x14,0},
+    {0x3f,0x40,0x40,0x3f,0},{0x1f,0x60,0x60,0x1f,0},{0x7f,0x30,0x0c,0x30,0x7f},{0x63,0x14,8,0x14,0x63},
     {7,8,0x70,8,7},{0x61,0x51,0x49,0x45,0x43},
     {0x3e,0x45,0x49,0x51,0x3e},{0x21,0x7f,1,0,0},{0x23,0x45,0x49,0x49,0x31},{0x22,0x41,0x49,0x49,0x36},
     {0x0c,0x14,0x24,0x7f,4},{0x7a,0x49,0x49,0x49,0x46},{0x3e,0x49,0x49,0x49,0x26},{0x40,0x47,0x48,0x50,0x60},
@@ -57,25 +65,23 @@ static void text(int x, int y, const char *s, UINT32 color, int scale) {
     }
 }
 
-static void log_line(const char *name, UINT32 color) {
-    text(42, 105 + (int)row * 30, "[", color, 2);
-    text(60, 105 + (int)row * 30, "OK", color, 1);
-    text(90, 105 + (int)row * 30, name, 0xE6EDF3, 1);
-    ++row;
+static void progress(void) {
+    int x = 42;
+    int y = 492;
+    int w = (int)width - 84;
+    int fill = steps >= 8 ? w : (w * (int)steps) / 8;
+    rect(x, y, w, 6, 0x202B3D);
+    if (fill > 0) rect(x, y, fill, 6, 0x5E8DFF);
 }
 
-static void log_warn(const char *name) {
-    text(42, 105 + (int)row * 30, "[", 0xD9A441, 2);
-    text(60, 105 + (int)row * 30, "--", 0xD9A441, 1);
-    text(90, 105 + (int)row * 30, name, 0xD9A441, 1);
+static void stage(const char *name, UINT32 color) {
+    int y = 180 + (int)row * 36;
+    rect(42, y - 4, (int)width - 84, 28, 0x111A2D);
+    circle(56, y + 10, 5, color);
+    text(74, y + 4, name, 0xF1F5FC, 1);
     ++row;
-}
-
-static void log_fail(const char *name) {
-    text(42, 105 + (int)row * 30, "[", 0xD9534F, 2);
-    text(60, 105 + (int)row * 30, "!!", 0xD9534F, 1);
-    text(90, 105 + (int)row * 30, name, 0xD9534F, 1);
-    ++row;
+    ++steps;
+    progress();
 }
 
 EFI_STATUS steveos_boot_diagnostics(EFI_HANDLE image_handle,
@@ -89,43 +95,51 @@ EFI_STATUS steveos_boot_diagnostics(EFI_HANDLE image_handle,
     stride = gop->Mode->Info->PixelsPerScanLine;
     fb = (UINT32 *)(UINTN)gop->Mode->FrameBufferBase;
     row = 0;
+    steps = 0;
 
-    rect(0, 0, (int)width, (int)height, 0x0A0F16);
-    rect(0, 0, (int)width, 60, 0x151D29);
-    text(30, 18, "STEVEOS BOOT DIAGNOSTICS", 0xFFFFFF, 2);
-    text(30, 48, "INITIALISING SYSTEM", 0x98A8BA, 1);
+    rect(0, 0, (int)width, (int)height, 0x080D17);
+    rect(0, 0, (int)width, 12, 0x5E8DFF);
+    circle((int)width - 50, 58, 14, 0x17243A);
+    circle((int)width - 50, 58, 6, 0x5E8DFF);
 
-    log_line("UEFI SYSTEM TABLE", 0x61D47A);
-    log_line("GRAPHICS OUTPUT", 0x61D47A);
+    text(42, 48, "STEVEOS", 0xFFFFFF, 4);
+    text(44, 103, "BOOT SEQUENCE", 0x8FA3BF, 1);
+    text(44, 125, "INITIALISING SYSTEM COMPONENTS", 0xC9D5E5, 2);
 
-    EFI_STATUS st = steveos_memory_init();
+    rect(42, 156, (int)width - 84, 2, 0x27354A);
+
+    EFI_STATUS st;
+
+    stage("UEFI SYSTEM TABLE", 0x62D48A);
+    stage("GRAPHICS OUTPUT", 0x62D48A);
+
+    st = steveos_memory_init();
     if (EFI_ERROR(st)) {
-        log_fail("MEMORY INITIALISATION FAILED");
-        text(42, 145 + (int)row * 30, "BOOT STOPPED FOR SAFETY", 0xD9534F, 1);
+        stage("MEMORY INITIALISATION FAILED", 0xD9534F);
+        text(42, 525, "BOOT STOPPED FOR SAFETY", 0xD9534F, 1);
         uefi_call_wrapper(BS->Stall, 1, 5000000);
         return st;
     }
-    log_line("MEMORY MANAGER", 0x61D47A);
+    stage("MEMORY MANAGER", 0x62D48A);
     steveos_memory_shutdown();
 
-    UINTN disks = steveos_count_disks();
-    (void)disks;
-    log_line("STORAGE DISCOVERY", 0x61D47A);
+    (void)steveos_count_disks();
+    stage("STORAGE DISCOVERY", 0x62D48A);
 
     st = steveos_network_available();
-    if (EFI_ERROR(st)) log_warn("NETWORK ADAPTER NOT AVAILABLE");
-    else log_line("NETWORK PROTOCOL", 0x61D47A);
+    stage(EFI_ERROR(st) ? "NETWORK DRIVER DEFERRED" : "NETWORK PROTOCOL", 0xD9A441);
 
     st = steveos_tasks_init();
-    if (EFI_ERROR(st)) log_fail("TASK SYSTEM FAILED");
-    else log_line("TASK MANAGER", 0x61D47A);
+    if (EFI_ERROR(st)) stage("TASK SYSTEM FAILED", 0xD9534F);
+    else stage("TASK MANAGER", 0x62D48A);
 
-    log_line("FILESYSTEM INTERFACE", 0x61D47A);
-    log_line("KERNEL HANDOFF", 0x61D47A);
-    log_line("WINDOW MANAGER", 0x61D47A);
+    stage("FILESYSTEM INTERFACE", 0x62D48A);
+    stage("KERNEL HANDOFF READY", 0x62D48A);
+    stage("WINDOW MANAGER READY", 0x62D48A);
 
-    text(42, 105 + (int)row * 30, "> STARTING STEVEOS DESKTOP", 0xFFFFFF, 1);
-    text(42, 135 + (int)row * 30, "PRESS ANY KEY FOR DEBUG CONSOLE", 0x77879A, 1);
-    uefi_call_wrapper(BS->Stall, 1, 1800000);
+    progress();
+    text(42, 525, "DESKTOP READY", 0x62D48A, 2);
+    text(42, 556, "STARTING STEVEOS", 0x8FA3BF, 1);
+    uefi_call_wrapper(BS->Stall, 1, 700000);
     return EFI_SUCCESS;
 }
