@@ -125,7 +125,7 @@ EFI_STATUS steveos_shell_start(EFI_HANDLE ih,EFI_GRAPHICS_OUTPUT_PROTOCOL *gp){
     mx=sc.w/2; my=sc.h/2;
 
     EFI_LOADED_IMAGE_PROTOCOL*li=0;
-    if(!EFI_ERROR(uefi_call_wrapper(BS->HandleProtocol,3,ih,&gEfiLoadedImageGuid,(VOID**)&li))&&li)
+    if(!EFI_ERROR(uefi_call_wrapper(BS->HandleProtocol,3,ih,&gEfiLoadedImageProtocolGuid,(VOID**)&li))&&li)
         source_device=li->DeviceHandle;
     if(source_device)
         uefi_call_wrapper(BS->HandleProtocol,3,source_device,&gEfiSimpleFileSystemProtocolGuid,(VOID**)&root);
