@@ -13,8 +13,6 @@
 #define DW_CLR_INTR 0x40
 #define DW_ENABLE 0x6C
 #define DW_STATUS 0x70
-#define DW_TXFLR 0x74
-#define DW_RXFLR 0x78
 #define DW_TX_ABRT_SOURCE 0x80
 #define DW_COMP_TYPE 0xFC
 #define DW_CON_MASTER (1u << 0)
@@ -40,9 +38,6 @@ typedef struct {
     uint8_t size;
     uint8_t valid;
     uint8_t relative;
-    uint8_t signed_value;
-    int32_t logical_min;
-    int32_t logical_max;
 } HID_AXIS;
 
 static volatile uint8_t *base;
@@ -56,7 +51,7 @@ static uint16_t max_input;
 static HID_AXIS x_axis, y_axis;
 static uint16_t button_bit;
 static uint8_t button_size;
-static uint8_t have_axes, have_button;
+static uint8_t have_axes, have_button, report_has_id;
 static uint8_t have_last_abs;
 static uint16_t last_x, last_y;
 static uint8_t last_buttons;
@@ -167,13 +162,6 @@ static int find_hid_device(void) {
     return 0;
 }
 
-static int32_t sign_extend(uint32_t v, uint8_t bits) {
-    if (!bits || bits >= 32) return (int32_t)v;
-    uint32_t m = 1u << (bits - 1);
-    uint32_t x = v & ((1u << bits) - 1u);
-    return (int32_t)((x ^ m) - m);
-}
-
 static uint32_t bits_get(const uint8_t *buf, uint16_t bit, uint8_t size) {
     uint32_t v = 0;
     for (uint8_t i = 0; i < size && i < 32; ++i)
@@ -183,16 +171,15 @@ static uint32_t bits_get(const uint8_t *buf, uint16_t bit, uint8_t size) {
 
 static void parse_report(void) {
     x_axis.valid = y_axis.valid = 0;
-    have_axes = have_button = 0;
-    button_bit = 0; button_size = 0;
+    have_axes = have_button = report_has_id = 0;
     uint16_t bitpos = 0;
-    uint32_t usage_page = 0, usage = 0, logical_min = 0, logical_max = 0;
-    uint8_t report_size = 0, report_count = 0, report_id = 0;
+    uint32_t usage_page = 0, usage = 0;
+    uint8_t report_size = 0, report_count = 0;
     uint8_t usages[8]; uint8_t usage_count = 0;
     size_t i = 0;
     while (i < report_len) {
         uint8_t prefix = report_desc[i++];
-        if (prefix == 0) continue;
+        if (!prefix) continue;
         if (prefix == HID_ITEM_LONG) {
             if (i + 2 > report_len) break;
             uint8_t n = report_desc[i++]; i += 1 + n; continue;
@@ -203,39 +190,36 @@ static void parse_report(void) {
         for (uint8_t n = 0; n < sz && i < report_len; ++n) value |= (uint32_t)report_desc[i++] << (8*n);
         if (type == 1) {
             if (tag == 0) usage_page = value;
-            else if (tag == 1) logical_min = value;
-            else if (tag == 2) logical_max = value;
             else if (tag == 7) report_size = (uint8_t)value;
+            else if (tag == 8) { (void)value; }
             else if (tag == 9) report_count = (uint8_t)value;
-        } else if (type == 2) {
-            if (tag == 0) {
-                usage = value; if (usage_count < 8) usages[usage_count++] = (uint8_t)value;
-            }
+            else if (tag == 8) {}
+            if (tag == 8) bitpos = bitpos;
+        } else if (type == 2 && tag == 0) {
+            usage = value; if (usage_count < 8) usages[usage_count++] = (uint8_t)value;
         } else if (type == 0) {
             if (tag == 8) {
                 uint8_t flags = (uint8_t)value;
                 uint8_t count = report_count ? report_count : 1;
                 for (uint8_t k = 0; k < count; ++k) {
                     uint32_t u = (k < usage_count) ? usages[k] : usage;
-                    if (usage_page == 1 && u == 0x30 && !x_axis.valid) {
-                        x_axis = (HID_AXIS){bitpos,report_size,1,(uint8_t)((flags>>2)&1),0,(int32_t)logical_min,(int32_t)logical_max};
-                    } else if (usage_page == 1 && u == 0x31 && !y_axis.valid) {
-                        y_axis = (HID_AXIS){bitpos,report_size,1,(uint8_t)((flags>>2)&1),0,(int32_t)logical_min,(int32_t)logical_max};
-                    } else if (usage_page == 9 && u >= 1 && u <= 8 && !have_button) {
+                    if (usage_page == 0x01 && u == 0x30 && !x_axis.valid)
+                        x_axis = (HID_AXIS){bitpos,report_size,1,(uint8_t)((flags >> 2)&1)};
+                    else if (usage_page == 0x01 && u == 0x31 && !y_axis.valid)
+                        y_axis = (HID_AXIS){bitpos,report_size,1,(uint8_t)((flags >> 2)&1)};
+                    else if (usage_page == 0x09 && u >= 1 && u <= 8 && !have_button) {
                         button_bit = bitpos; button_size = report_size; have_button = 1;
                     }
                     bitpos = (uint16_t)(bitpos + report_size);
                 }
-                if (!(flags & 1u)) {
-                    x_axis.signed_value = logical_min < 0;
-                    y_axis.signed_value = logical_min < 0;
-                }
                 usage_count = 0;
+            } else if (tag == 9) {
+                report_has_id = 1;
+                bitpos = 0;
             } else if (tag == 10 || tag == 12) {
                 usage_count = 0;
             }
         }
-        if (tag == 8 || tag == 10 || tag == 12 || type == 2) (void)report_id;
     }
     have_axes = x_axis.valid && y_axis.valid;
 }
@@ -259,24 +243,28 @@ void native_i2c_hid_poll(void) {
     uint16_t declared = (uint16_t)input_buf[0] | ((uint16_t)input_buf[1] << 8);
     if (declared < 3 || declared > max_input) return;
 
+    uint16_t report_base = report_has_id ? 24 : 16;
     if (have_axes && !x_axis.relative && !y_axis.relative) {
-        uint32_t xv = bits_get(input_buf, x_axis.bit + 16, x_axis.size);
-        uint32_t yv = bits_get(input_buf, y_axis.bit + 16, y_axis.size);
-        if (!have_last_abs) { last_x = (uint16_t)xv; last_y = (uint16_t)yv; have_last_abs = 1; }
-        else {
-            int32_t dx = sign_extend(xv - last_x, 16);
-            int32_t dy = sign_extend(yv - last_y, 16);
+        uint32_t xv = bits_get(input_buf, (uint16_t)(x_axis.bit + report_base), x_axis.size);
+        uint32_t yv = bits_get(input_buf, (uint16_t)(y_axis.bit + report_base), y_axis.size);
+        if (!have_last_abs) {
+            last_x = (uint16_t)xv; last_y = (uint16_t)yv; have_last_abs = 1;
+        } else {
+            int32_t dx = (int32_t)xv - (int32_t)last_x;
+            int32_t dy = (int32_t)yv - (int32_t)last_y;
             last_x = (uint16_t)xv; last_y = (uint16_t)yv;
-            uint8_t buttons = have_button ? (uint8_t)bits_get(input_buf, button_bit + 16, button_size) : 0;
-            if (dx || dy || buttons != last_buttons) native_pointer_move(dx / 8, -dy / 8, buttons);
+            uint8_t buttons = have_button ? (uint8_t)bits_get(input_buf, (uint16_t)(button_bit + report_base), button_size) : 0;
+            if (dx || dy || buttons != last_buttons) {
+                int32_t px = dx / 8; if (dx && !px) px = dx > 0 ? 1 : -1;
+                int32_t py = dy / 8; if (dy && !py) py = dy > 0 ? 1 : -1;
+                native_pointer_move(px, -py, buttons);
+            }
             last_buttons = buttons;
         }
         return;
     }
 
-    /* Relative HID mouse-compatible report fallback. */
-    uint16_t off = 2;
-    if (report_len && report_desc[0] == 0x85 && declared > off) ++off;
+    uint16_t off = 2 + (report_has_id ? 1 : 0);
     if ((uint16_t)(declared - off) >= 3) {
         uint8_t buttons = input_buf[off];
         int32_t dx = (int8_t)input_buf[off + 1];
