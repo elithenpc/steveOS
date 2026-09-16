@@ -21,6 +21,8 @@ typedef struct {
     uint64_t kernel_base;
     uint64_t kernel_size;
     uint64_t kernel_stack_top;
+    uint64_t uefi_get_variable;
+    uint64_t uefi_set_variable;
 } STEVEOS_BOOT_INFO;
 
 #endif
