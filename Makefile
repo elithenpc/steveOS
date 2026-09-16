@@ -77,9 +77,17 @@ build/native-kernel-entry.o: kernel/entry.S
 
 build/native-kernel-arch.o: kernel/arch.c kernel/usb.h src/bootinfo.h
 	mkdir -p build
-	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
+	$(CC) $(KERNEL_CFLAGS) -Dnative_keyboard_read_scancode=native_keyboard_read_scancode_arch -c $< -o $@
 
 build/native-kernel-usb.o: kernel/usb.c kernel/usb.h
+	mkdir -p build
+	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
+
+build/native-kernel-i2c.o: kernel/i2c.c kernel/i2c.h
+	mkdir -p build
+	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
+
+build/native-kernel-input.o: kernel/input.c kernel/i2c.h
 	mkdir -p build
 	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
 
@@ -87,7 +95,7 @@ build/native-kernel-main.o: kernel/main.c src/bootinfo.h build/boot.raw.o
 	mkdir -p build
 	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
 
-build/native_kernel.elf: build/native-kernel-entry.o build/native-kernel-main.o build/native-kernel-arch.o build/native-kernel-usb.o build/boot.raw.o
+build/native_kernel.elf: build/native-kernel-entry.o build/native-kernel-main.o build/native-kernel-arch.o build/native-kernel-usb.o build/native-kernel-i2c.o build/native-kernel-input.o build/boot.raw.o
 	$(LD) -T kernel/linker.ld -o $@ $^
 
 build/native_kernel.raw: build/native_kernel.elf
