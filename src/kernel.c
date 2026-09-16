@@ -15,22 +15,16 @@ static EFI_STATUS get_memory_map(EFI_MEMORY_DESCRIPTOR **map,
                                  UINTN *map_key,
                                  UINTN *descriptor_size,
                                  UINT32 *descriptor_version) {
-    UINTN size = 0;
-    UINTN key = 0;
-    UINTN desc_size = 0;
+    UINTN size = 0, key = 0, desc_size = 0;
     UINT32 version = 0;
-    EFI_STATUS st;
-
-    st = uefi_call_wrapper(BS->GetMemoryMap, 5,
-                           &size, NULL, &key, &desc_size, &version);
+    EFI_STATUS st = uefi_call_wrapper(BS->GetMemoryMap, 5,
+                                       &size, NULL, &key, &desc_size, &version);
     if (st != EFI_BUFFER_TOO_SMALL || desc_size == 0)
         return st;
-
     size += desc_size * 4;
     *map = AllocatePool(size);
     if (!*map)
         return EFI_OUT_OF_RESOURCES;
-
     st = uefi_call_wrapper(BS->GetMemoryMap, 5,
                            &size, *map, &key, &desc_size, &version);
     if (EFI_ERROR(st)) {
@@ -38,7 +32,6 @@ static EFI_STATUS get_memory_map(EFI_MEMORY_DESCRIPTOR **map,
         *map = NULL;
         return st;
     }
-
     *map_size = size;
     *map_key = key;
     *descriptor_size = desc_size;
@@ -49,20 +42,16 @@ static EFI_STATUS get_memory_map(EFI_MEMORY_DESCRIPTOR **map,
 static EFI_PHYSICAL_ADDRESS allocate_kernel_pages(UINTN pages) {
     EFI_PHYSICAL_ADDRESS address = STEVEOS_KERNEL_LOAD_ADDRESS;
     EFI_STATUS st = uefi_call_wrapper(BS->AllocatePages, 4,
-                                      AllocateAddress,
-                                      EfiLoaderData,
-                                      pages,
-                                      &address);
+                                      AllocateAddress, EfiLoaderData,
+                                      pages, &address);
     return EFI_ERROR(st) ? 0 : address;
 }
 
 static EFI_PHYSICAL_ADDRESS allocate_pages(UINTN pages) {
     EFI_PHYSICAL_ADDRESS address = 0;
     EFI_STATUS st = uefi_call_wrapper(BS->AllocatePages, 4,
-                                      AllocateAnyPages,
-                                      EfiLoaderData,
-                                      pages,
-                                      &address);
+                                      AllocateAnyPages, EfiLoaderData,
+                                      pages, &address);
     return EFI_ERROR(st) ? 0 : address;
 }
 
@@ -71,7 +60,6 @@ static UINT64 find_acpi_rsdp(void) {
         {0x8868e871, 0xe4f1, 0x11d3, {0xbc, 0x22, 0x00, 0x80, 0xc7, 0x3c, 0x88, 0x81}};
     static EFI_GUID acpi10 =
         {0xeb9d2d30, 0x2d88, 0x11d3, {0x9a, 0x16, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}};
-
     UINT64 fallback = 0;
     for (UINTN i = 0; i < ST->NumberOfTableEntries; ++i) {
         EFI_CONFIGURATION_TABLE *entry = &ST->ConfigurationTable[i];
@@ -93,7 +81,6 @@ EFI_STATUS steveos_kernel_boot(EFI_HANDLE image_handle,
                                EFI_GRAPHICS_OUTPUT_PROTOCOL *gop) {
     if (!gop || !gop->Mode || !gop->Mode->Info)
         return EFI_INVALID_PARAMETER;
-
     if (EFI_ERROR(steveos_kernel_prepare()))
         return EFI_NOT_FOUND;
 
@@ -101,11 +88,9 @@ EFI_STATUS steveos_kernel_boot(EFI_HANDLE image_handle,
                                       _binary_build_native_kernel_raw_start);
     const UINTN kernel_pages = (kernel_size + 4095) / 4096;
     const UINTN stack_pages = 16;
-
     EFI_PHYSICAL_ADDRESS kernel_addr = allocate_kernel_pages(kernel_pages);
     EFI_PHYSICAL_ADDRESS stack_addr = allocate_pages(stack_pages);
     STEVEOS_BOOT_INFO *boot = AllocatePool(sizeof(STEVEOS_BOOT_INFO));
-
     if (!kernel_addr || !stack_addr || !boot) {
         if (kernel_addr) uefi_call_wrapper(BS->FreePages, 2, kernel_addr, kernel_pages);
         if (stack_addr) uefi_call_wrapper(BS->FreePages, 2, stack_addr, stack_pages);
@@ -114,9 +99,7 @@ EFI_STATUS steveos_kernel_boot(EFI_HANDLE image_handle,
     }
 
     CopyMem((VOID *)(UINTN)kernel_addr,
-            _binary_build_native_kernel_raw_start,
-            kernel_size);
-
+            _binary_build_native_kernel_raw_start, kernel_size);
     ZeroMem(boot, sizeof(*boot));
     boot->magic = STEVEOS_BOOT_MAGIC;
     boot->framebuffer_base = gop->Mode->FrameBufferBase;
@@ -129,13 +112,12 @@ EFI_STATUS steveos_kernel_boot(EFI_HANDLE image_handle,
     boot->kernel_base = kernel_addr;
     boot->kernel_size = kernel_size;
     boot->kernel_stack_top = stack_addr + stack_pages * 4096ULL - 16;
+    boot->uefi_get_variable = (UINT64)(UINTN)RT->GetVariable;
+    boot->uefi_set_variable = (UINT64)(UINTN)RT->SetVariable;
 
     EFI_MEMORY_DESCRIPTOR *map = NULL;
-    UINTN map_size = 0;
-    UINTN map_key = 0;
-    UINTN descriptor_size = 0;
+    UINTN map_size = 0, map_key = 0, descriptor_size = 0;
     UINT32 descriptor_version = 0;
-
     EFI_STATUS st = get_memory_map(&map, &map_size, &map_key,
                                    &descriptor_size, &descriptor_version);
     if (EFI_ERROR(st)) {
@@ -144,7 +126,6 @@ EFI_STATUS steveos_kernel_boot(EFI_HANDLE image_handle,
         FreePool(boot);
         return st;
     }
-
     boot->memory_map = (UINT64)(UINTN)map;
     boot->memory_map_size = map_size;
     boot->memory_descriptor_size = descriptor_size;
@@ -156,20 +137,17 @@ EFI_STATUS steveos_kernel_boot(EFI_HANDLE image_handle,
         map = NULL;
         st = get_memory_map(&map, &map_size, &map_key,
                             &descriptor_size, &descriptor_version);
-        if (EFI_ERROR(st))
-            return st;
+        if (EFI_ERROR(st)) return st;
         boot->memory_map = (UINT64)(UINTN)map;
         boot->memory_map_size = map_size;
         boot->memory_descriptor_size = descriptor_size;
         boot->memory_descriptor_version = descriptor_version;
         st = uefi_call_wrapper(BS->ExitBootServices, 2, image_handle, map_key);
-        if (EFI_ERROR(st))
-            return st;
+        if (EFI_ERROR(st)) return st;
     }
 
     STEVEOS_NATIVE_ENTRY entry = (STEVEOS_NATIVE_ENTRY)(UINTN)kernel_addr;
     entry(boot, (VOID *)(UINTN)boot->kernel_stack_top);
-
     for (;;) __asm__ __volatile__("cli; hlt");
 }
 
