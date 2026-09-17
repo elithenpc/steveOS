@@ -212,9 +212,29 @@ static EFI_STATUS snapshot_boot_files(EFI_HANDLE image_handle, STEVEOS_BOOT_INFO
     boot->boot_files=(UINT64)(UINTN)files;
     boot->boot_file_count=count;
     boot->boot_device_handle=(UINT64)(UINTN)loaded->DeviceHandle;
+    steveos_boot_device=loaded->DeviceHandle;
     FreePool(buf);
     uefi_call_wrapper(root->Close,1,root);
     return EFI_SUCCESS;
+}
+
+static EFI_HANDLE steveos_boot_device;
+
+EFI_STATUS steveos_write_boot_text(const CHAR16 *path,const void *data,UINTN size){
+    if(!path||!data)return EFI_INVALID_PARAMETER;
+    if(!steveos_boot_device)return EFI_NOT_FOUND;
+    EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *fs=NULL;EFI_FILE_PROTOCOL *root=NULL;EFI_FILE_PROTOCOL *file=NULL;
+    EFI_STATUS st=uefi_call_wrapper(BS->HandleProtocol,3,steveos_boot_device,&gEfiSimpleFileSystemProtocolGuid,(VOID**)&fs);
+    if(EFI_ERROR(st)||!fs)return st;
+    st=uefi_call_wrapper(fs->OpenVolume,2,fs,&root);if(EFI_ERROR(st)||!root)return st;
+    st=uefi_call_wrapper(root->Open,5,root,&file,path,EFI_FILE_MODE_READ|EFI_FILE_MODE_WRITE|EFI_FILE_MODE_CREATE,0);
+    if(!EFI_ERROR(st)&&file){
+        UINT64 pos=0;uefi_call_wrapper(file->SetPosition,2,file,pos);
+        st=uefi_call_wrapper(file->Write,3,file,&size,(VOID*)data);
+        uefi_call_wrapper(file->Close,1,file);
+    }
+    uefi_call_wrapper(root->Close,1,root);
+    return st;
 }
 
 EFI_STATUS steveos_kernel_prepare(void) {
@@ -269,6 +289,7 @@ EFI_STATUS steveos_kernel_boot(EFI_HANDLE image_handle,
     boot->uefi_set_variable = (UINT64)(UINTN)RT->SetVariable;
     boot->uefi_get_time = (UINT64)(UINTN)RT->GetTime;
     boot->uefi_http_get = (UINT64)(UINTN)steveos_http_get;
+    boot->uefi_write_text = (UINT64)(UINTN)steveos_write_boot_text;
     boot->backbuffer_base = backbuffer_addr;
     boot->backbuffer_size = fb_bytes64;
     (void)snapshot_boot_files(image_handle, boot);
