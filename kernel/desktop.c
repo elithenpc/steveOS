@@ -75,6 +75,10 @@ static int browser_scroll;
 static uint32_t browser_status;
 static uint8_t browser_loaded;
 static uint8_t browser_focus;
+static uint8_t browser_history_count;
+static uint8_t browser_history_pos;
+static uint8_t browser_history_lock;
+static char browser_history[8][BROWSER_URL_MAX+1];
 static uint8_t shift_down;
 static uint8_t dirty=1;
 
@@ -404,10 +408,29 @@ static void parse_browser_html(void){
     }
     if(!browser_title[0]){size_t n=0;for(size_t k=0;browser_text[k]&&n+1<sizeof(browser_title)&&k<120;k++){if(browser_text[k]!='\n'&&browser_text[k]!='\r'){browser_title[n++]=browser_text[k];}}browser_title[n]=0;}
 }
+static void browser_copy_url(char*out,const char*in){size_t n=0;while(in[n]&&n+1<BROWSER_URL_MAX){out[n]=in[n];n++;}out[n]=0;}
+static void browser_history_visit(void){
+    if(browser_history_lock){browser_history_lock=0;return;}
+    if(browser_history_count&&ci_eq(browser_history[browser_history_pos],browser_url))return;
+    if(browser_history_count&&browser_history_pos+1<browser_history_count)browser_history_count=(uint8_t)(browser_history_pos+1);
+    if(browser_history_count>=8){for(int i=1;i<8;i++)browser_copy_url(browser_history[i-1],browser_history[i]);browser_history_count=7;}
+    browser_copy_url(browser_history[browser_history_count],browser_url);
+    browser_history_pos=browser_history_count;
+    browser_history_count++;
+}
 static int browser_fetch(void){
     HTTPGET get=(HTTPGET)(uintptr_t)boot_info->uefi_http_get;if(!get){browser_status=0;browser_loaded=0;return 0;}
     uint16_t u16[BROWSER_URL_MAX+2];size_t n=0;while(browser_url[n]&&n+1<sizeof(u16)/sizeof(u16[0])){u16[n]=(uint16_t)(unsigned char)browser_url[n];n++;}u16[n]=0;
-    uint64_t len=0;browser_raw[0]=0;browser_status=0;uint64_t st=get(u16,browser_raw,BROWSER_RAW_MAX-1,&len,&browser_status);if(st!=0||!len){browser_loaded=0;return 0;}if(len>=BROWSER_RAW_MAX)len=BROWSER_RAW_MAX-1;browser_raw[len]=0;parse_browser_html();browser_loaded=1;browser_scroll=0;return 1;
+    uint64_t len=0;browser_raw[0]=0;browser_status=0;uint64_t st=get(u16,browser_raw,BROWSER_RAW_MAX-1,&len,&browser_status);if(st!=0||!len){browser_loaded=0;return 0;}if(len>=BROWSER_RAW_MAX)len=BROWSER_RAW_MAX-1;browser_raw[len]=0;parse_browser_html();browser_loaded=1;browser_scroll=0;browser_history_visit();return 1;
+}
+static void browser_history_move(int direction){
+    if(!browser_history_count)return;
+    int next=(int)browser_history_pos+direction;
+    if(next<0||next>=(int)browser_history_count)return;
+    browser_history_pos=(uint8_t)next;
+    browser_copy_url(browser_url,browser_history[browser_history_pos]);
+    browser_history_lock=1;
+    browser_fetch();
 }
 static void draw_browser(void){
     window_bar("WEB BROWSER",browser_focus?"ADDRESS ACTIVE  ENTER LOAD  ESC HOME":"UP DOWN SCROLL  1-8 LINKS");
@@ -420,7 +443,7 @@ static void draw_browser(void){
         int x=52,y=214,lines=0;const char*p=browser_text;int skip=browser_scroll;while(*p&&skip>0){if(*p=='\n')skip--;p++;}while(*p&&lines<((int)height-330)/16){int used=0;while(*p&&*p!='\n'&&used<((int)width-350)/6){glyph(x+used*6,y+lines*16,*p,text_color(),1);used++;p++;}while(*p&&*p!='\n')p++;if(*p=='\n')p++;lines++;}
         fill_rect((int)width-286,160,252,(int)height-286,panel2_color());text( (int)width-270,178,"LINKS",sub_color(),1);for(int i=0;i<browser_link_count;i++){int yy=204+i*42;fill_rect((int)width-270,yy,220,32,panel_color());char num[2]={(char)('1'+i),0};text((int)width-258,yy+10,num,accent_color(),1);text_clip((int)width-238,yy+10,browser_link_text[i],text_color(),1,178);}
     }
-    text(40,(int)height-98,"HTTP BROWSER  •  BACKSPACE EDITS ADDRESS  •  DIGITS 1-8 FOLLOW LINKS",sub_color(),1);taskbar();
+    text(40,(int)height-98,"HTTP BROWSER  •  BACKSPACE ADDRESS  •  UP/DOWN SCROLL  •  LEFT/RIGHT BACK/FORWARD",sub_color(),1);taskbar();
 }
 
 static void terminal_add(const char*s){if(terminal_count<TERM_LINES){size_t i=0;while(s[i]&&i<63){terminal_lines[terminal_count][i]=s[i];i++;}terminal_lines[terminal_count][i]=0;terminal_count++;}else{for(int r=1;r<TERM_LINES;r++)for(int c=0;c<64;c++)terminal_lines[r-1][c]=terminal_lines[r][c];size_t i=0;while(s[i]&&i<63){terminal_lines[TERM_LINES-1][i]=s[i];i++;}terminal_lines[TERM_LINES-1][i]=0;}}
@@ -480,7 +503,7 @@ static void launch_app(int app){
     if(app>=0)current_app=app;
     selected_file=-1;
     browser_focus=app==APP_BROWSER?1:0;
-    if(app==APP_BROWSER){browser_url[0]=0;browser_loaded=0;browser_scroll=0;browser_status=0;browser_raw[0]=0;browser_text[0]=0;browser_title[0]=0;browser_link_count=0;}
+    if(app==APP_BROWSER){browser_url[0]=0;browser_loaded=0;browser_scroll=0;browser_status=0;browser_raw[0]=0;browser_text[0]=0;browser_title[0]=0;browser_link_count=0;browser_history_count=0;browser_history_pos=0;browser_history_lock=0;}
     mark_dirty();
 }
 static void app_click(uint32_t x,uint32_t y){
@@ -520,6 +543,8 @@ static void browser_key(uint8_t s){
     if(s==0x48){if(!browser_focus&&browser_scroll>0)browser_scroll--;return;}
     if(s==0x50){if(!browser_focus)browser_scroll++;return;}
     if(s==0x47){if(!browser_focus)browser_scroll=0;return;}
+    if(s==0x4B){if(!browser_focus)browser_history_move(-1);return;}
+    if(s==0x4D){if(!browser_focus)browser_history_move(1);return;}
     if(s==0x01){browser_focus=0;return;}
     if(!browser_focus&&s>1&&s<10&&s-2<browser_link_count){int i=s-2;size_t n=0;while(browser_link_urls[i][n]&&n+1<BROWSER_URL_MAX){browser_url[n]=browser_link_urls[i][n];n++;}browser_url[n]=0;browser_fetch();return;}
     char c=key_char(s);
