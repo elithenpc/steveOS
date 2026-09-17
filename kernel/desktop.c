@@ -423,10 +423,10 @@ static char hexch(uint8_t v){return v<10?(char)('0'+v):(char)('A'+v-10);}
 static void status_text(char*out,size_t cap,uint32_t status){if(cap<2)return;int n=0;if(status==0){out[0]=0;return;}out[n++]='H';out[n++]='T';out[n++]='T';out[n++]='P';out[n++]=' ';out[n++]=(char)('0'+(status/100)%10);out[n++]=(char)('0'+(status/10)%10);out[n++]=(char)('0'+status%10);out[n]=0;if((size_t)n>=cap)out[cap-1]=0; (void)hexch;}
 static void append_text(char*out,size_t*len,size_t cap,char c){if(*len+1<cap){out[(*len)++]=c;out[*len]=0;}}
 static void entity_char(const char*p,size_t n,char*out,size_t*len){
-    if(n==5&&begins_ci(p,"amp;"))append_text(out,len,BROWSER_TEXT_MAX,'&');
-    else if(n==4&&begins_ci(p,"lt;"))append_text(out,len,BROWSER_TEXT_MAX,'<');
-    else if(n==4&&begins_ci(p,"gt;"))append_text(out,len,BROWSER_TEXT_MAX,'>');
-    else if(n==6&&begins_ci(p,"quot;"))append_text(out,len,BROWSER_TEXT_MAX,'"');
+    if(n==4&&begins_ci(p,"amp;"))append_text(out,len,BROWSER_TEXT_MAX,'&');
+    else if(n==3&&begins_ci(p,"lt;"))append_text(out,len,BROWSER_TEXT_MAX,'<');
+    else if(n==3&&begins_ci(p,"gt;"))append_text(out,len,BROWSER_TEXT_MAX,'>');
+    else if(n==5&&begins_ci(p,"quot;"))append_text(out,len,BROWSER_TEXT_MAX,'"');
     else if(n==5&&begins_ci(p,"nbsp;"))append_text(out,len,BROWSER_TEXT_MAX,' ');
     else append_text(out,len,BROWSER_TEXT_MAX,'&');
 }
@@ -627,7 +627,7 @@ static void browser_key(uint8_t s){
     if(s==0x01){browser_focus=0;return;}
     if(!browser_focus&&s>1&&s<10&&s-2<browser_link_count){int i=s-2;size_t n=0;while(browser_link_urls[i][n]&&n+1<BROWSER_URL_MAX){browser_url[n]=browser_link_urls[i][n];n++;}browser_url[n]=0;browser_fetch();return;}
     char c=key_char(s);
-    if(browser_focus&&c&&((c>='A'&&c<='Z')||(c>='a'&&c<='z')||(c>='0'&&c<='9')||c==':'||c=='/'||c=='.'||c=='-'||c=='_'||c=='?'||c=='&'||c=='=')){
+    if(browser_focus&&c&&((c>='A'&&c<='Z')||(c>='a'&&c<='z')||(c>='0'&&c<='9')||c==':'||c=='/'||c=='.'||c=='-'||c=='_'||c=='?'||c=='&'||c=='='||c=='#'||c=='%'||c=='+'||c==';'||c=='~')){
         size_t n=0;while(browser_url[n])n++;
         if(n<BROWSER_URL_MAX){browser_url[n]=shift_down?shifted(c):c;browser_url[n+1]=0;}
     }
@@ -646,7 +646,7 @@ static void handle_scan(uint8_t s){
     if(s==0x2A||s==0x36){shift_down=1;return;}
     if(s==0xAA||s==0xB6){shift_down=0;return;}
     if(s&0x80)return;
-    if(s==0x3B){launch_app(APP_BROWSER);return;}if(s==0x3C){launch_app(APP_CALC);return;}if(s==0x3D){launch_app(APP_EDITOR);return;}if(s==0x3E){launch_app(APP_FILES);return;}if(s==0x3F){if(current_app==APP_EDITOR)save_note();else if(current_app==APP_SETTINGS)save_settings();mark_dirty();return;}if(s==0x40){launch_app(APP_TASKS);return;}if(s==0x41){launch_app(APP_TERMINAL);return;}if(s==0x42){launch_app(APP_CALENDAR);return;}if(s==0x43){launch_app(APP_CONTROL);return;}if(s==0x44){launch_app(APP_ABOUT);return;}
+    if(s==0x3B){launch_app(APP_BROWSER);return;}if(s==0x3C){launch_app(APP_CALC);return;}if(s==0x3D){launch_app(APP_EDITOR);return;}if(s==0x3E){launch_app(APP_FILES);return;}if(s==0x3F){if(current_app==APP_EDITOR)save_note();else if(current_app==APP_SETTINGS)save_settings();else if(current_app==APP_BROWSER&&browser_url[0])browser_fetch();mark_dirty();return;}if(s==0x40){launch_app(APP_TASKS);return;}if(s==0x41){launch_app(APP_TERMINAL);return;}if(s==0x42){launch_app(APP_CALENDAR);return;}if(s==0x43){launch_app(APP_CONTROL);return;}if(s==0x44){launch_app(APP_ABOUT);return;}
     if(s==1){current_app=APP_DESKTOP;menu_open=0;mark_dirty();return;}
     if(s==0x38&&current_app==APP_BROWSER){browser_focus=1;mark_dirty();return;}
     if(menu_open){if(current_app==APP_DESKTOP){}menu_open=0;return;}
