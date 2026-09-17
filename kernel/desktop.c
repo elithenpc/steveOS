@@ -24,7 +24,7 @@ typedef struct { uint32_t a,b,c,d; } GUID;
 typedef uint64_t (__attribute__((ms_abi)) *GETVAR)(uint16_t*,GUID*,uint32_t*,uint64_t*,void*);
 typedef uint64_t (__attribute__((ms_abi)) *SETVAR)(uint16_t*,GUID*,uint32_t,uint64_t,void*);
 typedef uint64_t (__attribute__((ms_abi)) *GETTIME)(void*,void*);
-typedef uint64_t (*HTTPGET)(const uint16_t*,char*,uint64_t,uint64_t*,uint32_t*);
+typedef uint64_t (__attribute__((ms_abi)) *HTTPGET)(const uint16_t*,char*,uint64_t,uint64_t*,uint32_t*);
 typedef struct { uint32_t magic; uint8_t light; uint8_t scale; uint16_t reserved; } SETTINGS;
 
 typedef struct {
@@ -110,7 +110,8 @@ static void mark_dirty(void){dirty=1;}
 static void fill_rect(int x,int y,int w,int h,uint32_t c){
     if(!backbuffer||w<=0||h<=0)return;
     int x0=x<0?0:x,y0=y<0?0:y,x1=x+w,y1=y+h;
-    if(x1>(int)width)x1=(int)width;if(y1>(int)height)y1=(int)height;
+    if(x1>(int)width)x1=(int)width;
+    if(y1>(int)height)y1=(int)height;
     for(int yy=y0;yy<y1;yy++){
         uint32_t*p=backbuffer+(size_t)yy*stride+x0;
         for(int xx=x0;xx<x1;xx++)*p++=c;
@@ -132,7 +133,7 @@ static void glyph(int x,int y,char c,uint32_t col,int s){
     else if(c=='.')fill_rect(x,y+6*s,s,s,col);
     else if(c==','){fill_rect(x,y+6*s,s,s,col);fill_rect(x-s,y+7*s,s,s,col);}
     else if(c=='!'){fill_rect(x+2*s,y,s,5*s,col);fill_rect(x+2*s,y+6*s,s,s,col);}
-    else if(c=='?'){fill_rect(x,y,s*5,s,col);fill_rect(x+4*s,y,s,s*3);fill_rect(x+2*s,y+3*s,s,s*2);fill_rect(x+2*s,y+6*s,s,s,col);}
+    else if(c=='?'){fill_rect(x,y,s*5,s,col);fill_rect(x+4*s,y,s,s*3,col);fill_rect(x+2*s,y+3*s,s,s*2,col);fill_rect(x+2*s,y+6*s,s,s,col);}
     else if(c=='_')fill_rect(x,y+7*s,5*s,s,col);
     else if(c=='|')fill_rect(x+2*s,y,s,8*s,col);
     else if(c=='('){fill_rect(x+s,y+s,s,s*6,col);fill_rect(x+2*s,y,s,s,col);fill_rect(x+2*s,y+7*s,s,s,col);}
@@ -337,7 +338,9 @@ static void draw_files(void){
 static uint16_t read16le(const uint8_t*d){return (uint16_t)d[0]|((uint16_t)d[1]<<8);}
 static uint32_t read32le(const uint8_t*d){return (uint32_t)d[0]|((uint32_t)d[1]<<8)|((uint32_t)d[2]<<16)|((uint32_t)d[3]<<24);}
 static void draw_bmp(const uint8_t*d,size_t len){
-    if(len<54||d[0]!='B'||d[1]!='M')return;uint32_t off=read32le(d+10),w=read32le(d+18),hr=read32le(d+22);int32_t h=(int32_t)hr;uint16_t planes=read16le(d+26),bpp=read16le(d+28);if(!w||!h||planes!=1||(bpp!=24&&bpp!=32))return;uint32_t ah=(uint32_t)(h<0?-h:h),row=((w*bpp+31)/32)*4;if((uint64_t)off+(uint64_t)row*ah>len)return;uint32_t dw=520,dh=(uint64_t)ah*dw/w;if(dh>430){dh=430;dw=(uint64_t)w*dh/ah;}int ox=((int)width-(int)dw)/2,oy=112,bytes=bpp/8;for(uint32_t y=0;y<dh;y++){uint32_t sy=(uint64_t)y*ah/dh;if(h>0)sy=ah-1-sy;for(uint32_t x=0;x<dw;x++){uint32_t sx=(uint64_t)x*w/dw;const uint8_t*v=d+off+(uint64_t)sy*row+(uint64_t)sx*bytes;put_pixel(ox+(int)x,oy+(int)y,0xFF000000u|(uint32_t)v[2]|((uint32_t)v[1]<<8)|((uint32_t)v[0]<<16));}}
+    if(len<54||d[0]!='B'||d[1]!='M')return;
+    uint32_t off=read32le(d+10),w=read32le(d+18),hr=read32le(d+22);int32_t h=(int32_t)hr;uint16_t planes=read16le(d+26),bpp=read16le(d+28);if(!w||!h||planes!=1||(bpp!=24&&bpp!=32))return;uint32_t ah=(uint32_t)(h<0?-h:h),row=((w*bpp+31)/32)*4;if((uint64_t)off+(uint64_t)row*ah>len)return;
+    uint32_t dw=520,dh=(uint64_t)ah*dw/w;if(dh>430){dh=430;dw=(uint64_t)w*dh/ah;}int ox=((int)width-(int)dw)/2,oy=112,bytes=bpp/8;for(uint32_t y=0;y<dh;y++){uint32_t sy=(uint64_t)y*ah/dh;if(h>0)sy=ah-1-sy;for(uint32_t x=0;x<dw;x++){uint32_t sx=(uint64_t)x*w/dw;const uint8_t*v=d+off+(uint64_t)sy*row+(uint64_t)sx*bytes;put_pixel(ox+(int)x,oy+(int)y,0xFF000000u|(uint32_t)v[2]|((uint32_t)v[1]<<8)|((uint32_t)v[0]<<16));}}
 }
 static void draw_builtin_image(void){
     const uint8_t*r=_binary_build_boot_raw_start,*e=_binary_build_boot_raw_end;if((size_t)(e-r)<8)return;uint32_t w=*(const uint32_t*)r,h=*(const uint32_t*)(r+4);const uint8_t*p=r+8;if(!w||!h||(size_t)w*h*4+8>(size_t)(e-r))return;uint32_t dw=520,dh=(uint64_t)h*dw/w;if(dh>430){dh=430;dw=(uint64_t)w*dh/h;}int ox=((int)width-(int)dw)/2,oy=112;for(uint32_t y=0;y<dh;y++){uint32_t sy=(uint64_t)y*h/dh;for(uint32_t x=0;x<dw;x++){uint32_t sx=(uint64_t)x*w/dw;const uint8_t*v=p+((size_t)sy*w+sx)*4;put_pixel(ox+(int)x,oy+(int)y,0xFF000000u|(uint32_t)v[2]|((uint32_t)v[1]<<8)|((uint32_t)v[0]<<16));}}
@@ -492,10 +495,18 @@ static void browser_key(uint8_t s){
     char c=key_char(s);if(browser_focus&&c&&browser_url[0]&&((c>='A'&&c<='Z')||(c>='a'&&c<='z')||(c>='0'&&c<='9')||c==':'||c=='/'||c=='.'||c=='-'||c=='_'||c=='?'||c=='&'||c=='=')){size_t n=0;while(browser_url[n])n++;if(n<BROWSER_URL_MAX){browser_url[n]=shift_down?shifted(c):c;browser_url[n+1]=0;}}
 }
 static void terminal_key(uint8_t s){if(s==0x2A||s==0x36){shift_down=1;return;}if(s==0xAA||s==0xB6){shift_down=0;return;}if(s==0x1C){terminal_exec();return;}if(s==0x0E){if(terminal_len)terminal_input[--terminal_len]=0;return;}char c=key_char(s);if(c&&terminal_len<TERM_MAX){terminal_input[terminal_len++]=shift_down?shifted(c):((c>='a'&&c<='z')?(char)(c-'a'+'A'):c);terminal_input[terminal_len]=0;}}
-static void calc_key(uint8_t s){if(s==0x1C){calc_eval();return;}if(s==0x0E){if(calc_len){calc_input[--calc_len]=0;calc_has_result=0;}return;}char c=key_char(s);if(c&&(c>='0'&&c<='9'||c=='+'||c=='-'||c=='*'||c=='/'||c=='('||c==')'))&&calc_len<CALC_MAX){calc_input[calc_len++]=c;calc_input[calc_len]=0;calc_has_result=0;}}
+static void calc_key(uint8_t s){
+    if(s==0x1C){calc_eval();return;}
+    if(s==0x0E){if(calc_len){calc_input[--calc_len]=0;calc_has_result=0;}return;}
+    char c=key_char(s);
+    int allowed=(c>='0'&&c<='9')||c=='+'||c=='-'||c=='*'||c=='/'||c=='('||c==')'||c=='.';
+    if(allowed&&calc_len<CALC_MAX){calc_input[calc_len++]=c;calc_input[calc_len]=0;calc_has_result=0;}
+}
 
 static void handle_scan(uint8_t s){
-    if(!s)return;if(s==0x2A||s==0x36){shift_down=1;return;}if(s==0xAA||s==0xB6){shift_down=0;return;}
+    if(!s)return;
+    if(s==0x2A||s==0x36){shift_down=1;return;}
+    if(s==0xAA||s==0xB6){shift_down=0;return;}
     if(s&0x80)return;
     if(s==0x3B){launch_app(APP_BROWSER);return;}if(s==0x3C){launch_app(APP_CALC);return;}if(s==0x3D){launch_app(APP_EDITOR);return;}if(s==0x3E){launch_app(APP_FILES);return;}if(s==0x3F){if(current_app==APP_EDITOR)save_note();else if(current_app==APP_SETTINGS)save_settings();mark_dirty();return;}if(s==0x40){launch_app(APP_TASKS);return;}if(s==0x41){launch_app(APP_TERMINAL);return;}if(s==0x42){launch_app(APP_CALENDAR);return;}if(s==0x43){launch_app(APP_CONTROL);return;}if(s==0x44){launch_app(APP_ABOUT);return;}
     if(s==1){current_app=APP_DESKTOP;menu_open=0;mark_dirty();return;}
