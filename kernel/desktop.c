@@ -97,6 +97,7 @@ static const GUID bookmarks_guid={0x53544556,0x4F53,0x4E56,0x00010003};
 static const uint16_t note_name[]={'S','t','e','v','e','O','S','N','o','t','e',0};
 static const uint16_t settings_name[]={'S','t','e','v','e','O','S','S','e','t','t','i','n','g','s',0};
 static const uint16_t bookmarks_name[]={'S','t','e','v','e','O','S','B','o','o','k','m','a','r','k','s',0};
+static const uint16_t note_file_name[]={L'\\',L'S',L't',L'e',L'v',L'e',L'O',L'S',L'N',L'o',L't',L'e',L'.',L't',L'x',L't',0};
 
 static const uint8_t letters[26][5]={
 {0x3E,0x09,0x09,0x09,0x3E},{0x7F,0x49,0x49,0x49,0x36},{0x3E,0x41,0x41,0x41,0x22},{0x7F,0x41,0x41,0x22,0x1C},
@@ -210,6 +211,7 @@ static void save_settings(void){
     SETVAR set=(SETVAR)(uintptr_t)boot_info->uefi_set_variable;SETTINGS s={0x53545654u,light_theme,pointer_scale,accent_id,0,0};set((uint16_t*)settings_name,(GUID*)&settings_guid,7,sizeof(s),&s);
 }
 static void browser_copy_url(char*out,const char*in);
+static int browser_fetch(void);
 static void terminal_add(const char*s);
 
 static void load_bookmarks(void){
@@ -225,7 +227,7 @@ static void load_bookmarks(void){
 }
 static void save_bookmarks(void){
     if(!boot_info->uefi_set_variable)return;
-    struct {uint32_t magic;uint8_t count;uint8_t pad[3];char url[8][BROWSER_URL_MAX+1];} data={{0}};
+    struct {uint32_t magic;uint8_t count;uint8_t pad[3];char url[8][BROWSER_URL_MAX+1];} data={0};
     data.magic=0x53545642u;data.count=browser_bookmark_count>8?8:browser_bookmark_count;
     for(int i=0;i<data.count;i++)browser_copy_url(data.url[i],browser_bookmarks[i]);
     SETVAR set=(SETVAR)(uintptr_t)boot_info->uefi_set_variable;
@@ -252,8 +254,15 @@ static void load_note(void){
     if(get((uint16_t*)note_name,(GUID*)&note_guid,&a,&z,note)==0){if(z>NOTE_MAX)z=NOTE_MAX;note_len=(size_t)z;note_cursor=note_len;}note[note_len]=0;
 }
 static void save_note(void){
-    if(!boot_info->uefi_set_variable)return;
-    SETVAR set=(SETVAR)(uintptr_t)boot_info->uefi_set_variable;set((uint16_t*)note_name,(GUID*)&note_guid,7,note_len,note);note_dirty=0;
+    if(boot_info->uefi_set_variable){
+        SETVAR set=(SETVAR)(uintptr_t)boot_info->uefi_set_variable;
+        set((uint16_t*)note_name,(GUID*)&note_guid,7,note_len,note);
+    }
+    if(boot_info->uefi_write_text&&note_len){
+        WRITEFILE write=(WRITEFILE)(uintptr_t)boot_info->uefi_write_text;
+        write((const uint16_t*)note_file_name,note,note_len);
+    }
+    note_dirty=0;
 }
 static void file_name(const STEVEOS_BOOT_FILE*f,char*out,size_t cap){size_t i=0;if(!cap)return;while(f&&i+1<cap&&i<STEVEOS_BOOT_FILE_NAME_MAX&&f->name[i]){uint16_t c=f->name[i++];out[i-1]=c<128?(char)c:'?';}out[i]=0;}
 static void load_text_file(STEVEOS_BOOT_FILE*f){if(!f||!f->data||!f->size)return;size_t n=(size_t)f->size;if(n>NOTE_MAX)n=NOTE_MAX;const uint8_t*d=(const uint8_t*)(uintptr_t)f->data;for(size_t i=0;i<n;i++)note[i]=(d[i]>=32||d[i]=='\n'||d[i]=='\t')?d[i]:' ';note[n]=0;note_len=n;note_cursor=n;note_dirty=0;current_app=APP_EDITOR;mark_dirty();}
