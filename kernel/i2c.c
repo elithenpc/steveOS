@@ -66,6 +66,23 @@ static void pci_write32(uint8_t b,uint8_t d,uint8_t f,uint8_t o,uint32_t v){uint
 static int wait_tx(uint32_t t){while(t--){if(*(volatile uint32_t*)(base+DW_TX_ABRT_SOURCE))return 0;if(*(volatile uint32_t*)(base+DW_STATUS)&DW_STATUS_TFE)return 1;pause_cpu();}return 0;}
 static int wait_rx(uint32_t t){while(t--){if(*(volatile uint32_t*)(base+DW_TX_ABRT_SOURCE))return 0;if(*(volatile uint32_t*)(base+DW_STATUS)&DW_STATUS_RFNE)return 1;pause_cpu();}return 0;}
 
+static int i2c_read_input(uint8_t*out,size_t len){
+    if(!ready||!out||!len||len>sizeof(input_buf))return 0;
+    *(volatile uint32_t*)(base+DW_TAR)=address;
+    (void)*(volatile uint32_t*)(base+DW_CLR_INTR);
+    for(size_t i=0;i<len;i++){
+        if(!wait_tx(50000))return 0;
+        uint32_t cmd=DW_DATA_READ;
+        if(i+1==len)cmd|=DW_DATA_STOP;
+        *(volatile uint32_t*)(base+DW_DATA_CMD)=cmd;
+    }
+    for(size_t i=0;i<len;i++){
+        if(!wait_rx(50000))return 0;
+        out[i]=(uint8_t)*(volatile uint32_t*)(base+DW_DATA_CMD);
+    }
+    return 1;
+}
+
 static int i2c_read_register(uint16_t reg,uint8_t*out,size_t len){
     if(!ready||!out||!len||len>255)return 0;
     *(volatile uint32_t*)(base+DW_TAR)=address;(void)*(volatile uint32_t*)(base+DW_CLR_INTR);
@@ -146,7 +163,7 @@ int native_i2c_hid_init(void){
 }
 
 void native_i2c_hid_poll(void){
-    if(!device_ready||!i2c_read_register(hid.input_reg,input_buf,max_input))return;
+    if(!device_ready||!i2c_read_input(input_buf,max_input))return;
     uint16_t declared=(uint16_t)input_buf[0]|((uint16_t)input_buf[1]<<8);if(declared<3||declared>max_input)return;
     uint16_t base_bit=(uint16_t)((report_has_id?3:2)*8);
     if(have_axes&&!x_axis.relative&&!y_axis.relative){
