@@ -55,7 +55,8 @@ static uint64_t total_memory,largest_region;
 static int current_app=APP_DESKTOP,previous_app=APP_DESKTOP;
 static int selected_file=-1,file_scroll,file_filter;
 static uint8_t previous_buttons,light_theme,pointer_scale=1,accent_id,note_dirty;
-static uint8_t menu_open,power_menu;
+static uint8_t menu_open,power_menu,menu_search_len;
+static char menu_search[64];
 static uint8_t note[NOTE_MAX+1];
 static size_t note_len,note_cursor;
 static char calc_input[CALC_MAX+1];
@@ -361,19 +362,50 @@ static void draw_icon(int x,int y,int type){
     else {fill_rect(x+12,y+12,28,28,a);fill_rect(x+20,y+7,12,8,a);}
 }
 
+static int contains_ci(const char*a,const char*b){
+    if(!b||!b[0])return 1;
+    for(const char*p=a;*p;p++){
+        const char*x=p,*y=b;
+        while(*x&&*y){
+            char cx=*x,cy=*y;
+            if(cx>='A'&&cx<='Z')cx=(char)(cx-'A'+'a');
+            if(cy>='A'&&cy<='Z')cy=(char)(cy-'A'+'a');
+            if(cx!=cy)break;
+            x++;y++;
+        }
+        if(!*y)return 1;
+    }
+    return 0;
+}
+static const char*menu_names[]={"Web Browser","Calculator","Text Editor","File Manager","Image Viewer","Settings","Task Manager","Terminal","Calendar","Control Center","About SteveOS","System Information"};
+static const int menu_apps[]={APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_IMAGE,APP_SETTINGS,APP_TASKS,APP_TERMINAL,APP_CALENDAR,APP_CONTROL,APP_ABOUT,APP_SYSINFO};
+static int menu_filtered_count(void){
+    int n=0;
+    for(int i=0;i<12;i++)if(contains_ci(menu_names[i],menu_search))n++;
+    return n;
+}
+static int menu_filtered_app(int visible){
+    int n=0;
+    for(int i=0;i<12;i++)if(contains_ci(menu_names[i],menu_search)){if(n==visible)return menu_apps[i];n++;}
+    return APP_DESKTOP;
+}
 static void draw_start_menu(void){
     int mw=430,mh=(int)height-76,x=12,y=(int)height-62-mh;
     fill_rect(x+4,y+4,mw,mh,0x06090Du);fill_rect(x,y,mw,mh,panel_color());
     text(x+22,y+20,"STEVEOS APPLICATIONS",text_color(),2);
     text(x+22,y+48,"MINT-STYLE DESKTOP",sub_color(),1);
-    const char*names[]={"Web Browser","Calculator","Text Editor","File Manager","Image Viewer","Settings","Task Manager","Terminal","Calendar","Control Center","About SteveOS","System Information"};
-    const int ap[]={APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_IMAGE,APP_SETTINGS,APP_TASKS,APP_TERMINAL,APP_CALENDAR,APP_CONTROL,APP_ABOUT,APP_SYSINFO};
-    for(int i=0;i<12;i++){
-        int row=i%6,col=i/6,bx=x+18+col*196,by=y+70+row*55;
-        fill_rect(bx,by,180,45,(current_app==ap[i])?panel2_color():bg_color());
-        static const int icon_map[]={0,1,2,3,7,6,5,4,7,7,7,6};draw_icon(bx+5,by-4,icon_map[i]);text(bx+66,by+12,names[i],text_color(),1);
+    fill_rect(x+18,y+60,mw-36,30,panel2_color());
+    text(x+30,y+70,menu_search[0]?menu_search:"SEARCH APPLICATIONS",menu_search[0]?text_color():sub_color(),1);
+    int shown=0;
+    for(int i=0;i<12;i++)if(contains_ci(menu_names[i],menu_search)){
+        int row=shown%6,col=shown/6,bx=x+18+col*196,by=y+98+row*55;
+        fill_rect(bx,by,180,45,(current_app==menu_apps[i])?panel2_color():bg_color());
+        static const int icon_map[]={0,1,2,3,7,6,5,4,7,7,7,6};draw_icon(bx+5,by-4,icon_map[i]);
+        text(bx+66,by+12,menu_names[i],text_color(),1);
+        shown++;
     }
-    fill_rect(x+18,y+mh-80,mw-36,32,panel2_color());text(x+30,y+mh-70,"F1 WEB   F2 CALC   F3 NOTE   F4 FILES",sub_color(),1);
+    fill_rect(x+18,y+mh-44,mw-36,28,panel2_color());
+    text(x+30,y+mh-36,menu_search[0]?"TYPE TO FILTER  ENTER LAUNCH  ESC CLOSE":"TYPE TO SEARCH  ENTER LAUNCH",sub_color(),1);
 }
 
 static void draw_desktop(void){
@@ -994,7 +1026,7 @@ static void draw_about(void){
 }
 
 static void launch_app(int app){
-    menu_open=0;power_menu=0;
+    menu_open=0;power_menu=0;menu_search_len=0;menu_search[0]=0;
     if(app>=0){
         if(app!=current_app)previous_app=current_app;
         current_app=app;
@@ -1035,11 +1067,34 @@ static void app_click(uint32_t x,uint32_t y){
         else if(hit(x,y,(int)width-214,106,50,40)){browser_focus=0;if(browser_url[0])browser_fetch();mark_dirty();}
         else{for(int i=0;i<browser_link_count;i++)if(hit(x,y,(int)width-270,228+i*42,220,32)){size_t n=0;while(browser_link_urls[i][n]&&n+1<BROWSER_URL_MAX)browser_url[n]=browser_link_urls[i][n],n++;browser_url[n]=0;browser_focus=0;browser_fetch();mark_dirty();return;}}
     }
-    else if(current_app==APP_DESKTOP){if(hit(x,y,0,(int)height-54,76,54)){menu_open^=1;mark_dirty();return;}int h=54;for(int i=0;i<6;i++)if(hit(x,y,84+i*72,(int)height-h,64,38)){launch_app((int[]){APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_TERMINAL,APP_SETTINGS}[i]);return;}int cw=250,ch=80,g=14,x0=28,y0=132,cols=width>=1200?4:3;for(int i=0;i<12;i++){int col=i%cols,row=i/cols,bx=x0+col*(cw+g),by=y0+row*(ch+g);if(hit(x,y,bx,by,cw,ch)){launch_app((int[]){APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_IMAGE,APP_SETTINGS,APP_TASKS,APP_TERMINAL,APP_CALENDAR,APP_CONTROL,APP_ABOUT,APP_SYSINFO}[i]);return;}}}
+    else if(current_app==APP_DESKTOP){if(hit(x,y,0,(int)height-54,76,54)){menu_open^=1;if(menu_open){menu_search_len=0;menu_search[0]=0;}mark_dirty();return;}int h=54;for(int i=0;i<6;i++)if(hit(x,y,84+i*72,(int)height-h,64,38)){launch_app((int[]){APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_TERMINAL,APP_SETTINGS}[i]);return;}int cw=250,ch=80,g=14,x0=28,y0=132,cols=width>=1200?4:3;for(int i=0;i<12;i++){int col=i%cols,row=i/cols,bx=x0+col*(cw+g),by=y0+row*(ch+g);if(hit(x,y,bx,by,cw,ch)){launch_app((int[]){APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_IMAGE,APP_SETTINGS,APP_TASKS,APP_TERMINAL,APP_CALENDAR,APP_CONTROL,APP_ABOUT,APP_SYSINFO}[i]);return;}}}
     else if(current_app==APP_ABOUT||current_app==APP_CONTROL||current_app==APP_TASKS||current_app==APP_EDITOR||current_app==APP_TERMINAL||current_app==APP_IMAGE||current_app==APP_CALENDAR||current_app==APP_SYSINFO){if(hit(x,y,(int)width-62,66,30,24)){current_app=APP_DESKTOP;mark_dirty();return;}if(y>(uint32_t)height-54&&x<76){current_app=APP_DESKTOP;menu_open=1;mark_dirty();return;}}
 }
-static void menu_click(uint32_t x,uint32_t y){int mw=430,mh=(int)height-76,mx=12,my=(int)height-62-mh;if(!hit(x,y,mx,my,mw,mh)){menu_open=0;mark_dirty();return;}for(int i=0;i<12;i++){int row=i%6,col=i/6,bx=mx+18+col*196,by=my+70+row*55;if(hit(x,y,bx,by,180,45)){launch_app((int[]){APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_IMAGE,APP_SETTINGS,APP_TASKS,APP_TERMINAL,APP_CALENDAR,APP_CONTROL,APP_ABOUT,APP_SYSINFO}[i]);return;}}}
+static void menu_click(uint32_t x,uint32_t y){
+    int mw=430,mh=(int)height-76,mx=12,my=(int)height-62-mh;
+    if(!hit(x,y,mx,my,mw,mh)){menu_open=0;menu_search_len=0;menu_search[0]=0;mark_dirty();return;}
+    if(hit(x,y,mx+18,my+60,mw-36,30)){return;}
+    int shown=0;
+    for(int i=0;i<12;i++)if(contains_ci(menu_names[i],menu_search)){
+        int row=shown%6,col=shown/6,bx=mx+18+col*196,by=my+98+row*55;
+        if(hit(x,y,bx,by,180,45)){launch_app(menu_apps[i]);return;}
+        shown++;
+    }
+}
 
+static void menu_key(uint8_t s){
+    if(s==0x01){menu_open=0;menu_search_len=0;menu_search[0]=0;mark_dirty();return;}
+    if(s==0x0E){if(menu_search_len)menu_search[--menu_search_len]=0;mark_dirty();return;}
+    if(s==0x1C){
+        if(menu_search_len){launch_app(menu_filtered_app(0));return;}
+        menu_open=0;mark_dirty();return;
+    }
+    char ch=key_char(s);
+    if(ch&&menu_search_len+1<sizeof(menu_search) && ((ch>='A'&&ch<='Z')||(ch>='a'&&ch<='z')||(ch>='0'&&ch<='9')||ch==' '||ch=='-'||ch=='_')){
+        if(ch>='A'&&ch<='Z')ch=(char)(ch-'A'+'a');
+        menu_search[menu_search_len++]=ch;menu_search[menu_search_len]=0;mark_dirty();return;
+    }
+}
 static char key_char(uint8_t s){
     static const char m[128]={0,27,'1','2','3','4','5','6','7','8','9','0','-','=',0,0,'q','w','e','r','t','y','u','i','o','p','[',']',0,0,'a','s','d','f','g','h','j','k','l',';','\'', '`',0,'\\','z','x','c','v','b','n','m',',','.','/',0,'*',0,' ',0};return s<128?m[s]:0;
 }
@@ -1105,7 +1160,7 @@ static void handle_scan(uint8_t s){
     if(s==0x58){power_menu^=1;menu_open=0;mark_dirty();return;}if(s==0x3B){launch_app(APP_BROWSER);return;}if(s==0x3C){launch_app(APP_CALC);return;}if(s==0x3D){launch_app(APP_EDITOR);return;}if(s==0x3E){launch_app(APP_FILES);return;}if(s==0x3F){if(current_app==APP_EDITOR)save_note();else if(current_app==APP_SETTINGS)save_settings();else if(current_app==APP_BROWSER&&browser_url[0])browser_fetch();mark_dirty();return;}if(s==0x40){launch_app(APP_TASKS);return;}if(s==0x41){launch_app(APP_TERMINAL);return;}if(s==0x42){launch_app(APP_CALENDAR);return;}if(s==0x43){launch_app(APP_CONTROL);return;}if(s==0x44){launch_app(APP_SYSINFO);return;}if(s==0x57){launch_app(APP_ABOUT);return;}
     if(s==1){current_app=APP_DESKTOP;menu_open=0;mark_dirty();return;}
     if(s==0x38&&current_app==APP_BROWSER){browser_focus=1;mark_dirty();return;}
-    if(menu_open){if(current_app==APP_DESKTOP){}menu_open=0;return;}
+    if(menu_open){menu_key(s);return;}
     if(current_app==APP_EDITOR){note_key(s);return;}if(current_app==APP_BROWSER){browser_key(s);return;}if(current_app==APP_CALC){calc_key(s);return;}if(current_app==APP_TERMINAL){terminal_key(s);return;}
     if(current_app==APP_CONTROL){if(s>=2&&s<=9){const int targets[]={APP_SETTINGS,APP_SETTINGS,APP_BROWSER,APP_FILES,APP_TASKS,APP_SYSINFO,APP_FILES,APP_ABOUT};launch_app(targets[s-2]);return;}mark_dirty();return;}
     if(current_app==APP_FILES){
