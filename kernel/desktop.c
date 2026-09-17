@@ -80,6 +80,8 @@ static uint8_t browser_history_count;
 static uint8_t browser_history_pos;
 static uint8_t browser_history_lock;
 static char browser_history[8][BROWSER_URL_MAX+1];
+static uint8_t browser_tab_count=1,browser_current_tab;
+static char browser_tabs[4][BROWSER_URL_MAX+1];
 static uint8_t browser_bookmark_count;
 static char browser_bookmarks[8][BROWSER_URL_MAX+1];
 static uint8_t ctrl_down,alt_down;
@@ -98,6 +100,7 @@ static const uint16_t note_name[]={'S','t','e','v','e','O','S','N','o','t','e',0
 static const uint16_t settings_name[]={'S','t','e','v','e','O','S','S','e','t','t','i','n','g','s',0};
 static const uint16_t bookmarks_name[]={'S','t','e','v','e','O','S','B','o','o','k','m','a','r','k','s',0};
 static const uint16_t note_file_name[]={L'\\',L'S',L't',L'e',L'v',L'e',L'O',L'S',L'N',L'o',L't',L'e',L'.',L't',L'x',L't',0};
+static const uint16_t page_file_name[]={L'\\',L'S',L't',L'e',L'v',L'e',L'O',L'S',L'P',L'a',L'g',L'e',L'.',L'h',L't',L'm',L'l',0};
 
 static const uint8_t letters[26][5]={
 {0x3E,0x09,0x09,0x09,0x3E},{0x7F,0x49,0x49,0x49,0x36},{0x3E,0x41,0x41,0x41,0x22},{0x7F,0x41,0x41,0x22,0x1C},
@@ -212,6 +215,7 @@ static void save_settings(void){
 }
 static void browser_copy_url(char*out,const char*in);
 static int browser_fetch(void);
+static void browser_tab_switch(int index);
 static void terminal_add(const char*s);
 
 static void load_bookmarks(void){
@@ -606,10 +610,49 @@ static void browser_history_visit(void){
     browser_history_count++;
 }
 static int browser_fetch(void){
-    HTTPGET get=(HTTPGET)(uintptr_t)boot_info->uefi_http_get;if(!get){browser_status=0;browser_loaded=0;return 0;}
+    HTTPGET get=(HTTPGET)(uintptr_t)boot_info->uefi_http_get;
+    if(!get){browser_status=0;browser_loaded=0;return 0;}
     uint16_t u16[BROWSER_URL_MAX+2];size_t n=0;while(browser_url[n]&&n+1<sizeof(u16)/sizeof(u16[0])){u16[n]=(uint16_t)(unsigned char)browser_url[n];n++;}u16[n]=0;
-    uint64_t len=0;browser_raw[0]=0;browser_status=0;uint64_t st=get(u16,browser_raw,BROWSER_RAW_MAX-1,&len,&browser_status);if(st!=0||!len){browser_loaded=0;return 0;}if(len>=BROWSER_RAW_MAX)len=BROWSER_RAW_MAX-1;browser_raw[len]=0;parse_browser_html();browser_loaded=1;browser_scroll=0;browser_history_visit();return 1;
+    uint64_t len=0;browser_raw[0]=0;browser_status=0;
+    uint64_t st=get(u16,browser_raw,BROWSER_RAW_MAX-1,&len,&browser_status);
+    if(st!=0||!len){browser_loaded=0;return 0;}
+    if(len>=BROWSER_RAW_MAX)len=BROWSER_RAW_MAX-1;
+    browser_raw[len]=0;parse_browser_html();browser_loaded=1;browser_scroll=0;
+    browser_copy_url(browser_tabs[browser_current_tab],browser_url);
+    browser_history_visit();
+    return 1;
 }
+static void browser_new_tab(void){
+    if(browser_tab_count<4){browser_current_tab=browser_tab_count++;browser_tabs[browser_current_tab][0]=0;}
+    else{browser_current_tab=(uint8_t)((browser_current_tab+1)&3u);browser_tabs[browser_current_tab][0]=0;}
+    browser_url[0]=0;browser_raw[0]=0;browser_text[0]=0;browser_title[0]=0;browser_link_count=0;browser_status=0;browser_loaded=0;browser_scroll=0;browser_focus=1;mark_dirty();
+}
+static void browser_tab_switch(int index){
+    if(index<0||index>=browser_tab_count)return;
+    if(index==browser_current_tab)return;
+    browser_current_tab=(uint8_t)index;
+    browser_copy_url(browser_url,browser_tabs[browser_current_tab]);
+    browser_focus=browser_url[0]?0:1;
+    browser_raw[0]=0;browser_text[0]=0;browser_title[0]=0;browser_link_count=0;browser_loaded=0;browser_scroll=0;browser_status=0;
+    if(browser_url[0]){browser_history_lock=1;browser_fetch();}
+    mark_dirty();
+}
+static void browser_close_tab(void){
+    if(browser_tab_count<=1){browser_url[0]=0;browser_loaded=0;browser_focus=1;mark_dirty();return;}
+    for(int i=browser_current_tab;i+1<browser_tab_count;i++)browser_copy_url(browser_tabs[i],browser_tabs[i+1]);
+    browser_tab_count--;if(browser_current_tab>=browser_tab_count)browser_current_tab=(uint8_t)(browser_tab_count-1);
+    browser_copy_url(browser_url,browser_tabs[browser_current_tab]);
+    browser_focus=browser_url[0]?0:1;browser_loaded=0;browser_raw[0]=0;browser_text[0]=0;browser_title[0]=0;browser_link_count=0;browser_status=0;browser_scroll=0;
+    if(browser_url[0]){browser_history_lock=1;browser_fetch();}
+    mark_dirty();
+}
+static void browser_save_page(void){
+    if(!browser_loaded||!browser_raw[0]||!boot_info->uefi_write_text)return;
+    WRITEFILE write=(WRITEFILE)(uintptr_t)boot_info->uefi_write_text;
+    write((const uint16_t*)page_file_name,browser_raw,(uint64_t)BROWSER_RAW_MAX);
+    terminal_add("PAGE SAVED AS STEVEOSPAGE.HTM");
+}
+
 static void browser_history_move(int direction){
     if(!browser_history_count)return;
     int next=(int)browser_history_pos+direction;
@@ -625,6 +668,8 @@ static void draw_browser(void){
     fill_rect(34,106,field_w,40,bg_color());stroke_rect(34,106,field_w,40,browser_focus?accent_color():panel2_color());
     if(browser_url[0])text_clip(46,117,browser_url,text_color(),1,field_w-24);else text(46,117,"TYPE URL THEN ENTER",sub_color(),1);
     int bx=(int)width-326;
+    for(int i=0;i<browser_tab_count;i++){int tx=38+i*120,ty=152;fill_rect(tx,ty,110,28,i==browser_current_tab?accent_dark():panel2_color());char tn[8]={'T',(char)('1'+i),0};text(tx+10,ty+8,tn,i==browser_current_tab?0xFFFFFFu:text_color(),1);}
+
     const char*bn[]={"B","F","R"};
     for(int i=0;i<3;i++){fill_rect(bx+i*56,106,50,40,panel2_color());text(bx+19+i*56,117,bn[i],i==2?accent_color():text_color(),1);}
     char st[24];status_text(st,sizeof(st),browser_status);if(browser_status){text((int)width-92,118,st,good_color(),1);}
@@ -785,7 +830,7 @@ static void launch_app(int app){
     if(app>=0)current_app=app;
     selected_file=-1;
     browser_focus=app==APP_BROWSER?1:0;
-    if(app==APP_BROWSER){browser_url[0]=0;browser_loaded=0;browser_scroll=0;browser_status=0;browser_raw[0]=0;browser_text[0]=0;browser_title[0]=0;browser_link_count=0;browser_history_count=0;browser_history_pos=0;browser_history_lock=0;}
+    if(app==APP_BROWSER){browser_url[0]=0;browser_loaded=0;browser_scroll=0;browser_status=0;browser_raw[0]=0;browser_text[0]=0;browser_title[0]=0;browser_link_count=0;browser_history_count=0;browser_history_pos=0;browser_history_lock=0;browser_tab_count=1;browser_current_tab=0;browser_tabs[0][0]=0;}
     mark_dirty();
 }
 static void app_click(uint32_t x,uint32_t y){
@@ -812,6 +857,7 @@ static void app_click(uint32_t x,uint32_t y){
         for(int i=0;i<8;i++){int col=i%2,row=i/2,rx=42+col*300,ry=114+row*76;if(hit(x,y,rx,ry,280,60)){const int targets[]={APP_SETTINGS,APP_SETTINGS,APP_BROWSER,APP_FILES,APP_TASKS,APP_SYSINFO,APP_FILES,APP_ABOUT};launch_app(targets[i]);return;}}
     }
     else if(current_app==APP_BROWSER){
+        for(int i=0;i<browser_tab_count;i++)if(hit(x,y,38+i*120,152,110,28)){browser_tab_switch(i);return;}
         if(hit(x,y,34,106,(int)width-370,40)){browser_focus=1;mark_dirty();}
         else if(hit(x,y,(int)width-326,106,50,40)){browser_focus=0;browser_history_move(-1);mark_dirty();}
         else if(hit(x,y,(int)width-270,106,50,40)){browser_focus=0;browser_history_move(1);mark_dirty();}
@@ -830,9 +876,13 @@ static char shifted(char c){if(c>='a'&&c<='z')return(char)(c-'a'+'A');if(c>='0'&
 static void browser_key(uint8_t s){
     if(ctrl_down){
         if(s==0x26){browser_focus=1;return;}
+        if(s==0x14){browser_new_tab();return;}
+        if(s==0x11){browser_close_tab();return;}
         if(s==0x13){if(browser_url[0])browser_fetch();return;}
+        if(s==0x1F){browser_save_page();return;}
         if(s==0x20){bookmark_current();return;}
         if(s==0x30){open_first_bookmark();return;}
+        if(s>=0x02&&s<=0x05){browser_tab_switch((int)s-2);return;}
     }
 
     if(s==0x2A||s==0x36){shift_down=1;return;}
@@ -904,7 +954,7 @@ static void render(void){
 }
 
 void steveos_desktop_init(STEVEOS_BOOT_INFO *boot){
-    boot_info=boot;boot_files=(STEVEOS_BOOT_FILE*)(uintptr_t)boot->boot_files;framebuffer=(uint32_t*)(uintptr_t)boot->framebuffer_base;width=(uint32_t)boot->width;height=(uint32_t)boot->height;stride=(uint32_t)boot->pixels_per_scanline;memory_stats();init_backbuffer();load_settings();load_note();load_bookmarks();calc_input[0]=0;terminal_lines[0][0]=0;terminal_add("STEVEOS NATIVE SHELL");terminal_add("TYPE HELP FOR COMMANDS");browser_focus=0;dirty=1;}
+    boot_info=boot;boot_files=(STEVEOS_BOOT_FILE*)(uintptr_t)boot->boot_files;framebuffer=(uint32_t*)(uintptr_t)boot->framebuffer_base;width=(uint32_t)boot->width;height=(uint32_t)boot->height;stride=(uint32_t)boot->pixels_per_scanline;memory_stats();init_backbuffer();load_settings();load_note();load_bookmarks();browser_tab_count=1;browser_current_tab=0;browser_tabs[0][0]=0;calc_input[0]=0;terminal_lines[0][0]=0;terminal_add("STEVEOS NATIVE SHELL");terminal_add("TYPE HELP FOR COMMANDS");browser_focus=0;dirty=1;}
 
 void steveos_desktop_run(STEVEOS_BOOT_INFO *boot){
     (void)boot;uint32_t last_x=native_pointer_x(),last_y=native_pointer_y();uint8_t last_b=native_pointer_buttons();
