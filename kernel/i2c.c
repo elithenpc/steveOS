@@ -51,7 +51,7 @@ static uint16_t max_input;
 static HID_AXIS x_axis, y_axis;
 static uint16_t button_bit;
 static uint8_t button_size, have_axes, have_button, have_last_abs;
-static uint16_t last_x, last_y;
+static uint32_t last_x, last_y;
 static uint8_t last_buttons;
 
 extern void native_pointer_move(int32_t dx, int32_t dy, uint8_t buttons);
@@ -95,7 +95,10 @@ static int controller_start(uint64_t bar){
 static int find_hid_device(void){
     uint8_t raw[HID_DESC_LEN];
     for(uint16_t a=0x08;a<=0x5F;a++){address=a;if(!i2c_read_register(1,raw,sizeof(raw)))continue;HID_DESC*h=(HID_DESC*)raw;
-        if(h->hid_desc_len!=HID_DESC_LEN||!h->input_reg||!h->max_input_len||h->max_input_len>sizeof(input_buf)||!h->report_desc_reg||!h->report_desc_len)continue;
+        if(h->hid_desc_len!=HID_DESC_LEN||h->bcd_version!=0x0100||!h->input_reg||!h->max_input_len||h->max_input_len>sizeof(input_buf)||!h->report_desc_reg||!h->report_desc_len)continue;
+        /* Prefer the Alps HID devices used by several Dell Latitude models,
+         * while retaining generic HID-over-I2C fallback support. */
+        if(h->vendor_id==0x044E && (h->product_id==0x121F || h->product_id==0x1212 || h->product_id==0x120A || h->product_id==0x120B || h->product_id==0x120C || h->product_id==0x120D || h->product_id==0x1216 || h->product_id==0x1217 || h->product_id==0x121E || h->product_id==0x1220)){hid=*h;max_input=h->max_input_len;device_ready=1;return 1;}
         hid=*h;max_input=h->max_input_len;device_ready=1;return 1;
     }return 0;
 }
@@ -142,9 +145,9 @@ void native_i2c_hid_poll(void){
     if(have_axes&&!x_axis.relative&&!y_axis.relative){
         uint32_t xv=bits_get(input_buf,(uint16_t)(x_axis.bit+base_bit),x_axis.size),yv=bits_get(input_buf,(uint16_t)(y_axis.bit+base_bit),y_axis.size);
         if(!have_last_abs){last_x=(uint16_t)xv;last_y=(uint16_t)yv;have_last_abs=1;return;}
-        int32_t dx=(int32_t)xv-(int32_t)last_x,dy=(int32_t)yv-(int32_t)last_y;last_x=(uint16_t)xv;last_y=(uint16_t)yv;
+        int64_t dx=(int64_t)xv-(int64_t)last_x,dy=(int64_t)yv-(int64_t)last_y;last_x=xv;last_y=yv;
         uint8_t buttons=have_button?(uint8_t)bits_get(input_buf,(uint16_t)(button_bit+base_bit),button_size):0;
-        if(dx||dy||buttons!=last_buttons){int32_t px=dx/8;if(dx&&!px)px=dx>0?1:-1;int32_t py=dy/8;if(dy&&!py)py=dy>0?1:-1;native_pointer_move(px,-py,buttons);}last_buttons=buttons;return;
+        if(dx||dy||buttons!=last_buttons){int32_t px=(int32_t)(dx/8),py=(int32_t)(dy/8);if(dx&&!px)px=dx>0?1:-1;if(dy&&!py)py=dy>0?1:-1;if(px>20)px=20;if(px<-20)px=-20;if(py>20)py=20;if(py<-20)py=-20;native_pointer_move(px,-py,buttons);}last_buttons=buttons;return;
     }
     uint16_t off=(uint16_t)(2+(report_has_id?1:0));if((uint16_t)(declared-off)<3)return;
     uint8_t buttons=input_buf[off];int32_t dx=(int8_t)input_buf[off+1],dy=(int8_t)input_buf[off+2];if(dx||dy||buttons)native_pointer_move(dx,-dy,buttons);
