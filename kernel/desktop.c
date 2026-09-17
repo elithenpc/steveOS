@@ -44,6 +44,7 @@ extern uint8_t native_pointer_buttons(void);
 extern void native_pointer_hide(void), native_pointer_show(void);
 extern int native_usb_mouse_present(void), native_i2c_hid_present(void);
 extern const unsigned char _binary_build_boot_raw_start[], _binary_build_boot_raw_end[];
+extern const unsigned char _binary_build_mint_icons_raw_start[], _binary_build_mint_icons_raw_end[];
 
 static STEVEOS_BOOT_INFO *boot_info;
 static STEVEOS_BOOT_FILE *boot_files;
@@ -235,9 +236,37 @@ static void window_bar(const char*title,const char*hint){
     fill_rect((int)width-62,66,30,24,danger_color());text((int)width-52,74,"X",0xFFFFFFu,1);
 }
 
+static int mint_icon_info(int type,const uint8_t**pixels,uint16_t*w,uint16_t*h){
+    const uint8_t*p=_binary_build_mint_icons_raw_start,*e=_binary_build_mint_icons_raw_end;
+    if((size_t)(e-p)<8||*(const uint32_t*)p!=0x43494D59u)return 0;
+    uint32_t count=*(const uint32_t*)(p+4);p+=8;
+    if(type<0||(uint32_t)type>=count)return 0;
+    for(int i=0;i<=type;i++){
+        if(p+24>e)return 0;
+        uint16_t iw=*(const uint16_t*)p,ih=*(const uint16_t*)(p+2);
+        uint32_t len=*(const uint32_t*)(p+4);
+        p+=24;
+        if(!iw||!ih||p+(size_t)len>e)return 0;
+        if(i==type){*w=iw;*h=ih;*pixels=p;return 1;}
+        p+=len;
+    }
+    return 0;
+}
 static void draw_icon(int x,int y,int type){
-    uint32_t a=accent_color(),s=sub_color();
+    const uint8_t*p=NULL;uint16_t iw=0,ih=0;
     fill_rect(x,y,52,52,panel2_color());
+    if(mint_icon_info(type,&p,&iw,&ih)){
+        int dw=44,dh=(int)((uint32_t)ih*dw/iw);
+        if(dh>44){dh=44;dw=(int)((uint32_t)iw*dh/ih);}
+        int ox=x+(52-dw)/2,oy=y+(52-dh)/2;
+        for(int yy=0;yy<dh;yy++)for(int xx=0;xx<dw;xx++){
+            uint32_t sx=(uint32_t)xx*iw/dw,sy=(uint32_t)yy*ih/dh;
+            const uint8_t*q=p+((size_t)sy*iw+sx)*4;
+            if(q[3]>=24)put_pixel(ox+xx,oy+yy,0xFF000000u|(uint32_t)q[2]|((uint32_t)q[1]<<8)|((uint32_t)q[0]<<16));
+        }
+        return;
+    }
+    uint32_t a=accent_color();
     if(type==0){fill_rect(x+14,y+12,24,25,a);fill_rect(x+9,y+21,34,16,a);}
     else if(type==1){fill_rect(x+10,y+10,32,32,a);text(x+18,y+17,"+",0xFFFFFFu,2);}
     else if(type==2){fill_rect(x+11,y+9,30,34,0xFFFFFFu);fill_rect(x+15,y+14,22,2,a);fill_rect(x+15,y+21,22,2,a);fill_rect(x+15,y+28,16,2,a);}
@@ -245,7 +274,6 @@ static void draw_icon(int x,int y,int type){
     else if(type==4){fill_rect(x+11,y+10,30,34,0x101820u);text(x+16,y+19,"_",a,2);}
     else if(type==5){stroke_rect(x+10,y+10,32,32,a);fill_rect(x+17,y+17,18,18,a);}
     else {fill_rect(x+12,y+12,28,28,a);fill_rect(x+20,y+7,12,8,a);}
-    (void)s;
 }
 
 static void draw_start_menu(void){
