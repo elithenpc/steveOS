@@ -8,7 +8,7 @@ GNU_EFI_LIBDIR := $(if $(GNU_EFI_LIBDIR),$(GNU_EFI_LIBDIR),/usr/lib)
 CFLAGS := -I/usr/include/efi -I/usr/include/efi/x86_64 \
           -fpic -ffreestanding -fno-stack-protector -fno-stack-check \
           -fshort-wchar -mno-red-zone -maccumulate-outgoing-args
-KERNEL_CFLAGS := -ffreestanding -fno-stack-protector -fno-stack-check -fno-pie -fno-pic \
+KERNEL_CFLAGS := -O2 -ffreestanding -fno-stack-protector -fno-stack-check -fno-pie -fno-pic \
                  -mno-red-zone -mcmodel=small -Wall -Wextra -I.
 LDFLAGS := -nostdlib -znocombreloc -T $(GNU_EFI_LIBDIR)/elf_x86_64_efi.lds \
            -shared -Bsymbolic -L$(GNU_EFI_LIBDIR) $(GNU_EFI_LIBDIR)/crt0-efi-x86_64.o
@@ -53,7 +53,7 @@ build/memory.o: src/memory.c src/memory.h
 
 build/fs.o: src/fs.c src/fs.h
 	mkdir -p build
-	$(CC) $(CFLAGS) -c src/fs.c -o $@
+	$(CC) $(CFLAGS) -c $< -o $@
 
 build/installer.o: src/installer.c src/installer.h src/fs.h
 	mkdir -p build
