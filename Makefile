@@ -30,7 +30,15 @@ build/mint_icons.raw: third_party/mint-y-icons/usr/share/icons/Mint-Y/apps/64/br
 	third_party/mint-y-icons/usr/share/icons/Mint-Y/apps/64/Terminal.png \
 	third_party/mint-y-icons/usr/share/icons/Mint-Y/apps/64/gnome-system-monitor.png \
 	third_party/mint-y-icons/usr/share/icons/Mint-Y/apps/64/cinnamon-preferences-color.png \
-	third_party/mint-y-icons/usr/share/icons/Mint-Y/apps/64/calendar.png tools/mint_icons_to_raw.py
+	third_party/mint-y-icons/usr/share/icons/Mint-Y/apps/64/calendar.png \
+	third_party/mint-y-icons/usr/share/icons/Mint-Y/places/64/user-home.png \
+	third_party/mint-y-icons/usr/share/icons/Mint-Y/places/64/folder-documents.png \
+	third_party/mint-y-icons/usr/share/icons/Mint-Y/places/64/folder-download.png \
+	third_party/mint-y-icons/usr/share/icons/Mint-Y/places/64/folder-pictures.png \
+	third_party/mint-y-icons/usr/share/icons/Mint-Y/places/64/gtk-network.png \
+	third_party/mint-y-icons/usr/share/icons/Mint-Y/apps/64/cinnamon-preferences-desktop-display.png \
+	third_party/mint-y-icons/usr/share/icons/Mint-Y/apps/64/cs-power.png \
+	third_party/mint-y-icons/usr/share/icons/Mint-Y/apps/64/hwinfo.png tools/mint_icons_to_raw.py
 	python3 tools/mint_icons_to_raw.py
 
 build/mint_icons.raw.o: build/mint_icons.raw
