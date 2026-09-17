@@ -631,7 +631,7 @@ static void browser_load_first_image(void){
     HTTPGET get=(HTTPGET)(uintptr_t)boot_info->uefi_http_get;
     uint16_t u16[BROWSER_URL_MAX+2];size_t n=0;
     while(browser_image_url[n]&&n+1<sizeof(u16)/sizeof(u16[0])){u16[n]=(uint16_t)(unsigned char)browser_image_url[n];n++;}u16[n]=0;
-    uint64_t len=0,status=0;uint64_t st=get(u16,browser_image_raw,sizeof(browser_image_raw)-1,&len,(uint32_t*)&status);
+    uint64_t len=0;uint32_t image_status=0;uint64_t st=get(u16,browser_image_raw,sizeof(browser_image_raw)-1,&len,&image_status);
     if(st==0&&len>=54&&len<=sizeof(browser_image_raw)-1&&browser_image_raw[0]=='B'&&browser_image_raw[1]=='M'){browser_image_len=(size_t)len;browser_image_loaded=1;}
 }
 static void draw_browser_image(void){
@@ -648,6 +648,13 @@ static void draw_browser_image(void){
 static int browser_fetch(void){
     HTTPGET get=(HTTPGET)(uintptr_t)boot_info->uefi_http_get;
     if(!get){browser_status=0;browser_loaded=0;return 0;}
+    if(browser_url[0]&&!begins_ci(browser_url,"http://")&&!begins_ci(browser_url,"https://")&&!begins_ci(browser_url,"file:///")){
+        char tmp[BROWSER_URL_MAX+1];size_t p=0;const char*proto="http://";
+        while(proto[p]&&p+1<BROWSER_URL_MAX){tmp[p]=proto[p];p++;}
+        for(size_t i=0;browser_url[i]&&p+1<BROWSER_URL_MAX;i++)tmp[p++]=browser_url[i];
+        tmp[p]=0;browser_copy_url(browser_url,tmp);
+    }
+    if(begins_ci(browser_url,"file:///"))return 0;
     uint16_t u16[BROWSER_URL_MAX+2];size_t n=0;while(browser_url[n]&&n+1<sizeof(u16)/sizeof(u16[0])){u16[n]=(uint16_t)(unsigned char)browser_url[n];n++;}u16[n]=0;
     uint64_t len=0;browser_raw[0]=0;browser_status=0;
     uint64_t st=get(u16,browser_raw,BROWSER_RAW_MAX-1,&len,&browser_status);
