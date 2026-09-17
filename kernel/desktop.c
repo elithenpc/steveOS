@@ -17,7 +17,7 @@
 enum {
     APP_DESKTOP, APP_BROWSER, APP_CALC, APP_EDITOR, APP_FILES, APP_IMAGE,
     APP_SETTINGS, APP_TASKS, APP_TERMINAL, APP_CALENDAR, APP_CONTROL,
-    APP_ABOUT
+    APP_ABOUT, APP_SYSINFO
 };
 
 typedef struct { uint32_t a,b,c,d; } GUID;
@@ -289,8 +289,8 @@ static void draw_start_menu(void){
     fill_rect(x+4,y+4,mw,mh,0x06090Du);fill_rect(x,y,mw,mh,panel_color());
     text(x+22,y+20,"STEVEOS APPLICATIONS",text_color(),2);
     text(x+22,y+48,"MINT-STYLE DESKTOP",sub_color(),1);
-    const char*names[]={"Web Browser","Calculator","Text Editor","File Manager","Image Viewer","Settings","Task Manager","Terminal","Calendar","Control Center","About SteveOS"};
-    const int ap[]={APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_IMAGE,APP_SETTINGS,APP_TASKS,APP_TERMINAL,APP_CALENDAR,APP_CONTROL,APP_ABOUT};
+    const char*names[]={"Web Browser","Calculator","Text Editor","File Manager","Image Viewer","Settings","Task Manager","Terminal","Calendar","Control Center","About SteveOS","System Information"};
+    const int ap[]={APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_IMAGE,APP_SETTINGS,APP_TASKS,APP_TERMINAL,APP_CALENDAR,APP_CONTROL,APP_ABOUT,APP_SYSINFO};
     for(int i=0;i<11;i++){
         int row=i%6,col=i/6,bx=x+18+col*196,by=y+70+row*55;
         fill_rect(bx,by,180,45,(current_app==ap[i])?panel2_color():bg_color());
@@ -303,8 +303,8 @@ static void draw_desktop(void){
     panel();
     text(28,72,"WELCOME",text_color(),3);
     text(30,104,"A BIGGER NATIVE STEVEOS DESKTOP",sub_color(),1);
-    const char*names[]={"WEB BROWSER","CALCULATOR","TEXT EDITOR","FILE MANAGER","IMAGE VIEWER","SETTINGS","TASK MANAGER","TERMINAL","CALENDAR","CONTROL CENTER","ABOUT STEVEOS","APP LIBRARY"};
-    const int ap[]={APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_IMAGE,APP_SETTINGS,APP_TASKS,APP_TERMINAL,APP_CALENDAR,APP_CONTROL,APP_ABOUT,-1};
+    const char*names[]={"WEB BROWSER","CALCULATOR","TEXT EDITOR","FILE MANAGER","IMAGE VIEWER","SETTINGS","TASK MANAGER","TERMINAL","CALENDAR","CONTROL CENTER","ABOUT STEVEOS","SYSTEM INFORMATION"};
+    const int ap[]={APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_IMAGE,APP_SETTINGS,APP_TASKS,APP_TERMINAL,APP_CALENDAR,APP_CONTROL,APP_ABOUT,APP_SYSINFO};
     int cw=250,ch=80,g=14,x0=28,y0=132,cols=width>=1200?4:3;
     for(int i=0;i<12;i++){
         int col=i%cols,row=i/cols,x=x0+col*(cw+g),y=y0+row*(ch+g);
@@ -580,6 +580,31 @@ static void draw_control(void){
     text(42,(int)height-98,"CENTRAL VIEW OF STEVEOS HARDWARE AND OPEN-SOURCE INSPIRATION",sub_color(),1);taskbar();
 }
 
+static void cpuid_native(uint32_t leaf,uint32_t sub,uint32_t*a,uint32_t*b,uint32_t*c,uint32_t*d){
+    __asm__ __volatile__("cpuid":"=a"(*a),"=b"(*b),"=c"(*c),"=d"(*d):"a"(leaf),"c"(sub));
+}
+static void draw_sysinfo(void){
+    window_bar("SYSTEM INFORMATION","NATIVE HARDWARE / FIRMWARE");
+    uint32_t a=0,b=0,cpu_c=0,d=0;char vendor[13];
+    cpuid_native(0,0,&a,&b,&cpu_c,&d);
+    vendor[0]=(char)b;vendor[1]=(char)(b>>8);vendor[2]=(char)(b>>16);vendor[3]=(char)(b>>24);
+    vendor[4]=(char)d;vendor[5]=(char)(d>>8);vendor[6]=(char)(d>>16);vendor[7]=(char)(d>>24);
+    vendor[8]=(char)cpu_c;vendor[9]=(char)(cpu_c>>8);vendor[10]=(char)(cpu_c>>16);vendor[11]=(char)(cpu_c>>24);vendor[12]=0;
+    text(42,116,"CPU VENDOR",accent_color(),1);text(42,140,vendor,text_color(),2);
+    if(a>=1){cpuid_native(1,0,&a,&b,&cpu_c,&d);}
+    text(42,186,"CPU SIGNATURE",accent_color(),1);u64_text(42,210,(uint64_t)(a),text_color(),2);
+    text(42,248,"MEMORY",accent_color(),1);u64_text(42,272,total_memory/1024/1024,text_color(),2);text(104,275,"MB CONVENTIONAL",sub_color(),1);
+    text(300,248,"LARGEST FREE REGION",accent_color(),1);u64_text(300,272,largest_region/1024/1024,text_color(),2);text(380,275,"MB",sub_color(),1);
+    text(42,310,"GRAPHICS",accent_color(),1);u64_text(42,334,width,text_color(),2);text(100,337,"X",sub_color(),1);u64_text(122,334,height,text_color(),2);text(180,337,"GOP PIXELS",sub_color(),1);
+    text(42,372,"FRAMEBUFFER STRIDE",sub_color(),1);u64_text(210,372,stride,text_color(),1);text(42,400,"KERNEL SIZE",sub_color(),1);u64_text(210,400,(uint64_t)boot_info->kernel_size/1024,text_color(),1);text(270,400,"KB",sub_color(),1);
+    text(42,438,"ACPI RSDP",sub_color(),1);text(210,438,boot_info->acpi_rsdp?"PRESENT":"MISSING",boot_info->acpi_rsdp?good_color():danger_color(),1);
+    text(42,466,"NVRAM",sub_color(),1);text(210,466,(boot_info->uefi_get_variable&&boot_info->uefi_set_variable)?"AVAILABLE":"OFF",good_color(),1);
+    text(42,494,"UEFI HTTP",sub_color(),1);text(210,494,boot_info->uefi_http_get?"AVAILABLE":"OFF",boot_info->uefi_http_get?good_color():danger_color(),1);
+    text(42,522,"USB HID MOUSE",sub_color(),1);text(210,522,native_usb_mouse_present()?"ACTIVE":"OFF",native_usb_mouse_present()?good_color():sub_color(),1);
+    text(42,550,"I2C HID TOUCHPAD",sub_color(),1);text(210,550,native_i2c_hid_present()?"ACTIVE":"OFF",native_i2c_hid_present()?good_color():sub_color(),1);
+    text(42,(int)height-98,"SYSTEM INFORMATION IS READ DIRECTLY FROM THE NATIVE BOOT ENVIRONMENT",sub_color(),1);taskbar();
+}
+
 static void draw_about(void){
     window_bar("ABOUT STEVEOS","NATIVE X86-64 DESKTOP");text(44,122,"STEVEOS",accent_color(),3);text(46,162,"NATIVE KERNEL DESKTOP 0.9",text_color(),1);text(46,190,"UEFI GOP • GDT • IDT • PAGING • PS2 • USB HID • I2C HID",sub_color(),1);text(46,216,"NATIVE APPS • NVRAM SETTINGS • TEXT EDITOR • HTTP BROWSER",sub_color(),1);
     fill_rect(44,254,(int)width-88,150,panel2_color());text(62,274,"LINUX MINT INSPIRATION",text_color(),1);text(62,300,"TRADITIONAL DESKTOP / PANEL / MENU PATTERNS",sub_color(),1);text(62,324,"MINT-Y ICON THEME REFERENCE: linuxmint/mint-y-icons",sub_color(),1);text(62,348,"CINNAMON PROJECT REFERENCE: linuxmint/cinnamon",sub_color(),1);text(62,372,"SEE THIRD_PARTY.MD FOR LICENSING AND ATTRIBUTION.",sub_color(),1);
@@ -604,10 +629,10 @@ static void app_click(uint32_t x,uint32_t y){
     else if(current_app==APP_FILES){for(int row=0;row<10;row++){uint64_t i=(uint64_t)file_scroll+row;if(i>=boot_info->boot_file_count)break;if(hit(x,y,278,150+row*40,(int)width-316,32)){selected_file=(int)i;STEVEOS_BOOT_FILE*f=&boot_files[i];if(f->kind==1)current_app=APP_IMAGE;else if(f->kind==2&&f->data){if(boot_name_is_html(f))browser_load_local_file(f);else load_text_file(f);}mark_dirty();return;}}}
     else if(current_app==APP_SETTINGS){if(hit(x,y,42,136,(int)width-84,54))light_theme^=1;else if(hit(x,y,42,202,(int)width-84,54)){pointer_scale=pointer_scale>=4?1:pointer_scale+1;native_pointer_set_scale(pointer_scale);}else if(hit(x,y,42,308,(int)width-84,54)){accent_id=(uint8_t)((accent_id+1)&3u);}mark_dirty();}
     else if(current_app==APP_BROWSER){if(hit(x,y,34,106,(int)width-68,40)){browser_focus=1;mark_dirty();}else{for(int i=0;i<browser_link_count;i++)if(hit(x,y,(int)width-270,204+i*42,220,32)){size_t n=0;while(browser_link_urls[i][n]&&n+1<BROWSER_URL_MAX)browser_url[n]=browser_link_urls[i][n],n++;browser_url[n]=0;browser_focus=0;browser_fetch();mark_dirty();return;}}}
-    else if(current_app==APP_DESKTOP){if(hit(x,y,0,(int)height-54,76,54)){menu_open^=1;mark_dirty();return;}int h=54;for(int i=0;i<6;i++)if(hit(x,y,84+i*72,(int)height-h,64,38)){launch_app((int[]){APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_TERMINAL,APP_SETTINGS}[i]);return;}int cw=250,ch=80,g=14,x0=28,y0=132,cols=width>=1200?4:3;for(int i=0;i<12;i++){int col=i%cols,row=i/cols,bx=x0+col*(cw+g),by=y0+row*(ch+g);if(hit(x,y,bx,by,cw,ch)){if(i==11)menu_open=1;else launch_app((int[]){APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_IMAGE,APP_SETTINGS,APP_TASKS,APP_TERMINAL,APP_CALENDAR,APP_CONTROL,APP_ABOUT,APP_DESKTOP}[i]);return;}}}
+    else if(current_app==APP_DESKTOP){if(hit(x,y,0,(int)height-54,76,54)){menu_open^=1;mark_dirty();return;}int h=54;for(int i=0;i<6;i++)if(hit(x,y,84+i*72,(int)height-h,64,38)){launch_app((int[]){APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_TERMINAL,APP_SETTINGS}[i]);return;}int cw=250,ch=80,g=14,x0=28,y0=132,cols=width>=1200?4:3;for(int i=0;i<12;i++){int col=i%cols,row=i/cols,bx=x0+col*(cw+g),by=y0+row*(ch+g);if(hit(x,y,bx,by,cw,ch)){if(i==11)menu_open=1;else launch_app((int[]){APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_IMAGE,APP_SETTINGS,APP_TASKS,APP_TERMINAL,APP_CALENDAR,APP_CONTROL,APP_ABOUT,APP_SYSINFO}[i]);return;}}}
     else if(current_app==APP_ABOUT||current_app==APP_CONTROL||current_app==APP_TASKS||current_app==APP_EDITOR||current_app==APP_TERMINAL||current_app==APP_IMAGE||current_app==APP_CALENDAR){if(hit(x,y,(int)width-62,66,30,24)){current_app=APP_DESKTOP;mark_dirty();return;}if(y>(uint32_t)height-54&&x<76){current_app=APP_DESKTOP;menu_open=1;mark_dirty();return;}}
 }
-static void menu_click(uint32_t x,uint32_t y){int mw=430,mh=(int)height-76,mx=12,my=(int)height-62-mh;if(!hit(x,y,mx,my,mw,mh)){menu_open=0;mark_dirty();return;}for(int i=0;i<11;i++){int row=i%6,col=i/6,bx=mx+18+col*196,by=my+70+row*55;if(hit(x,y,bx,by,180,45)){launch_app((int[]){APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_IMAGE,APP_SETTINGS,APP_TASKS,APP_TERMINAL,APP_CALENDAR,APP_CONTROL,APP_ABOUT}[i]);return;}}}
+static void menu_click(uint32_t x,uint32_t y){int mw=430,mh=(int)height-76,mx=12,my=(int)height-62-mh;if(!hit(x,y,mx,my,mw,mh)){menu_open=0;mark_dirty();return;}for(int i=0;i<11;i++){int row=i%6,col=i/6,bx=mx+18+col*196,by=my+70+row*55;if(hit(x,y,bx,by,180,45)){launch_app((int[]){APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_IMAGE,APP_SETTINGS,APP_TASKS,APP_TERMINAL,APP_CALENDAR,APP_CONTROL,APP_ABOUT,APP_SYSINFO}[i]);return;}}}
 
 static char key_char(uint8_t s){
     static const char m[128]={0,27,'1','2','3','4','5','6','7','8','9','0','-','=',0,0,'q','w','e','r','t','y','u','i','o','p','[',']',0,0,'a','s','d','f','g','h','j','k','l',';','\'', '`',0,'\\','z','x','c','v','b','n','m',',','.','/',0,'*',0,' ',0};return s<128?m[s]:0;
@@ -655,7 +680,7 @@ static void handle_scan(uint8_t s){
     if(s==0x2A||s==0x36){shift_down=1;return;}
     if(s==0xAA||s==0xB6){shift_down=0;return;}
     if(s&0x80)return;
-    if(s==0x3B){launch_app(APP_BROWSER);return;}if(s==0x3C){launch_app(APP_CALC);return;}if(s==0x3D){launch_app(APP_EDITOR);return;}if(s==0x3E){launch_app(APP_FILES);return;}if(s==0x3F){if(current_app==APP_EDITOR)save_note();else if(current_app==APP_SETTINGS)save_settings();else if(current_app==APP_BROWSER&&browser_url[0])browser_fetch();mark_dirty();return;}if(s==0x40){launch_app(APP_TASKS);return;}if(s==0x41){launch_app(APP_TERMINAL);return;}if(s==0x42){launch_app(APP_CALENDAR);return;}if(s==0x43){launch_app(APP_CONTROL);return;}if(s==0x44){launch_app(APP_ABOUT);return;}
+    if(s==0x3B){launch_app(APP_BROWSER);return;}if(s==0x3C){launch_app(APP_CALC);return;}if(s==0x3D){launch_app(APP_EDITOR);return;}if(s==0x3E){launch_app(APP_FILES);return;}if(s==0x3F){if(current_app==APP_EDITOR)save_note();else if(current_app==APP_SETTINGS)save_settings();else if(current_app==APP_BROWSER&&browser_url[0])browser_fetch();mark_dirty();return;}if(s==0x40){launch_app(APP_TASKS);return;}if(s==0x41){launch_app(APP_TERMINAL);return;}if(s==0x42){launch_app(APP_CALENDAR);return;}if(s==0x43){launch_app(APP_CONTROL);return;}if(s==0x44){launch_app(APP_SYSINFO);return;}if(s==0x57){launch_app(APP_ABOUT);return;}
     if(s==1){current_app=APP_DESKTOP;menu_open=0;mark_dirty();return;}
     if(s==0x38&&current_app==APP_BROWSER){browser_focus=1;mark_dirty();return;}
     if(menu_open){if(current_app==APP_DESKTOP){}menu_open=0;return;}
@@ -666,7 +691,7 @@ static void handle_scan(uint8_t s){
 }
 
 static void render(void){
-    switch(current_app){case APP_DESKTOP:draw_desktop();break;case APP_BROWSER:draw_browser();break;case APP_CALC:draw_calc();break;case APP_EDITOR:draw_editor();break;case APP_FILES:draw_files();break;case APP_IMAGE:draw_image();break;case APP_SETTINGS:draw_settings();break;case APP_TASKS:draw_tasks();break;case APP_TERMINAL:draw_terminal();break;case APP_CALENDAR:draw_calendar();break;case APP_CONTROL:draw_control();break;default:draw_about();break;}
+    switch(current_app){case APP_DESKTOP:draw_desktop();break;case APP_BROWSER:draw_browser();break;case APP_CALC:draw_calc();break;case APP_EDITOR:draw_editor();break;case APP_FILES:draw_files();break;case APP_IMAGE:draw_image();break;case APP_SETTINGS:draw_settings();break;case APP_TASKS:draw_tasks();break;case APP_TERMINAL:draw_terminal();break;case APP_CALENDAR:draw_calendar();break;case APP_CONTROL:draw_control();break;case APP_SYSINFO:draw_sysinfo();break;default:draw_about();break;}
     present();dirty=0;
 }
 
