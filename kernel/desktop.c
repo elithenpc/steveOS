@@ -52,7 +52,7 @@ static uint32_t *framebuffer,*backbuffer;
 static uint32_t width,height,stride;
 static uint64_t total_memory,largest_region;
 static int current_app=APP_DESKTOP;
-static int selected_file=-1,file_scroll;
+static int selected_file=-1,file_scroll,file_filter;
 static uint8_t previous_buttons,light_theme,pointer_scale=1,accent_id,note_dirty;
 static uint8_t menu_open;
 static uint8_t note[NOTE_MAX+1];
@@ -439,19 +439,48 @@ static void browser_load_local_file(const STEVEOS_BOOT_FILE*f){
     browser_status=200;browser_loaded=1;browser_focus=0;browser_scroll=0;current_app=APP_BROWSER;mark_dirty();
 }
 
-static void draw_files(void){
-    window_bar("FILE MANAGER","BOOT VOLUME SNAPSHOT");
-    fill_rect(38,110,220,(int)height-214,panel2_color());
-    text(56,128,"PLACES",sub_color(),1);
-    const char*places[]={"Computer","Boot Volume","Home","Documents","Pictures","Downloads"};
-    for(int i=0;i<6;i++){fill_rect(50,150+i*42,190,34,(i==1)?accent_dark():panel_color());text(66,161+i*42,places[i],i==1?0xFFFFFFu:text_color(),1);}
-    text(284,128,"NAME",sub_color(),1);text((int)width-240,128,"SIZE",sub_color(),1);
-    int shown=0;for(uint64_t i=(uint64_t)file_scroll;i<boot_info->boot_file_count&&shown<10;i++,shown++){
-        STEVEOS_BOOT_FILE*f=&boot_files[i];char name[64];file_name(f,name,sizeof(name));int y=150+shown*40;uint32_t c=selected_file==(int)i?accent_dark():panel_color();fill_rect(278,y,(int)width-316,32,c);text(294,y+10,name,selected_file==(int)i?0xFFFFFFu:text_color(),1);u64_text((int)width-236,y+10,f->size,sub_color(),1);text((int)width-150,y+10,(f->attributes&0x10)?"DIR":(f->kind==1?"IMG":(f->kind==2?"TXT":"FILE")),sub_color(),1);
-    }
-    text(40,(int)height-98,"CLICK OR ENTER TO OPEN TEXT/IMAGE FILES  UP/DOWN SCROLL",sub_color(),1);taskbar();
+static const char*file_filter_name(void){
+    const char*n[]={"ALL ITEMS","BOOT VOLUME","TEXT FILES","IMAGES","DIRECTORIES","OTHER FILES"};
+    return n[file_filter<6?file_filter:0];
 }
-
+static int file_matches(const STEVEOS_BOOT_FILE*f){
+    if(!f)return 0;
+    if(file_filter==0||file_filter==1)return 1;
+    if(file_filter==2)return f->kind==2;
+    if(file_filter==3)return f->kind==1;
+    if(file_filter==4)return (f->attributes&0x10)!=0;
+    return f->kind==0;
+}
+static int filtered_count(void){
+    int n=0;
+    for(uint64_t i=0;i<boot_info->boot_file_count;i++)if(file_matches(&boot_files[i]))n++;
+    return n;
+}
+static int visible_file_at(int visible,uint64_t*out){
+    if(!out||visible<0)return 0;
+    int n=0;
+    for(uint64_t i=0;i<boot_info->boot_file_count;i++)if(file_matches(&boot_files[i])){
+        if(n==visible){*out=i;return 1;}
+        n++;
+    }
+    return 0;
+}
+static void draw_files(void){
+    window_bar("FILE MANAGER",file_filter_name());
+    fill_rect(38,110,220,(int)height-214,panel2_color());
+    text(56,128,"PLACES / FILTERS",sub_color(),1);
+    const char*places[]={"All Items","Boot Volume","Text Files","Images","Directories","Other Files"};
+    for(int i=0;i<6;i++){fill_rect(50,150+i*42,190,34,(i==file_filter)?accent_dark():panel_color());text(66,161+i*42,places[i],i==file_filter?0xFFFFFFu:text_color(),1);}
+    text(284,128,"NAME",sub_color(),1);text((int)width-240,128,"SIZE",sub_color(),1);
+    int total=filtered_count(),shown=0;
+    for(int row=0;row<10;row++){
+        uint64_t i=0;if(!visible_file_at(file_scroll+row,&i))break;
+        STEVEOS_BOOT_FILE*f=&boot_files[i];char name[64];file_name(f,name,sizeof(name));int y=150+shown*40;uint32_t cc=selected_file==(int)i?accent_dark():panel_color();
+        fill_rect(278,y,(int)width-316,32,cc);text(294,y+10,name,selected_file==(int)i?0xFFFFFFu:text_color(),1);u64_text((int)width-236,y+10,f->size,sub_color(),1);text((int)width-150,y+10,(f->attributes&0x10)?"DIR":(f->kind==1?"IMG":(f->kind==2?"TXT":"FILE")),sub_color(),1);shown++;
+    }
+    text(284,(int)height-122,"VISIBLE",sub_color(),1);u64_text(342,(int)height-122,(uint64_t)total,text_color(),1);
+    text(40,(int)height-98,"1-6 FILTERS  •  CLICK/ENTER OPEN TEXT OR IMAGE  •  UP/DOWN SCROLL",sub_color(),1);taskbar();
+}
 static uint16_t read16le(const uint8_t*d){return (uint16_t)d[0]|((uint16_t)d[1]<<8);}
 static uint32_t read32le(const uint8_t*d){return (uint32_t)d[0]|((uint32_t)d[1]<<8)|((uint32_t)d[2]<<16)|((uint32_t)d[3]<<24);}
 static void draw_bmp(const uint8_t*d,size_t len){
@@ -738,7 +767,10 @@ static void app_click(uint32_t x,uint32_t y){
     }
     if(current_app!=APP_DESKTOP&&hit(x,y,(int)width-62,66,30,24)){current_app=APP_DESKTOP;menu_open=0;mark_dirty();return;}
     if(current_app==APP_CALC){int bw=100,bh=46,g=10,cols=5,x0=38,y0=204;const char*keys[]={"7","8","9","/","4","5","6","*","1","2","3","-","0","(",")","+","C","=","."};for(int i=0;i<19;i++){int bx=x0+(i%cols)*(bw+g),by=y0+(i/cols)*(bh+g);if(hit(x,y,bx,by,bw,bh)){char c=keys[i][0];if(c=='C'){calc_len=0;calc_input[0]=0;calc_has_result=0;}else if(c=='=')calc_eval();else if(calc_len<CALC_MAX){calc_input[calc_len++]=c;calc_input[calc_len]=0;calc_has_result=0;}mark_dirty();return;}}}
-    else if(current_app==APP_FILES){for(int row=0;row<10;row++){uint64_t i=(uint64_t)file_scroll+row;if(i>=boot_info->boot_file_count)break;if(hit(x,y,278,150+row*40,(int)width-316,32)){selected_file=(int)i;STEVEOS_BOOT_FILE*f=&boot_files[i];if(f->kind==1)current_app=APP_IMAGE;else if(f->kind==2&&f->data){if(boot_name_is_html(f))browser_load_local_file(f);else load_text_file(f);}mark_dirty();return;}}}
+    else if(current_app==APP_FILES){
+        for(int p=0;p<6;p++)if(hit(x,y,50,150+p*42,190,34)){file_filter=p;file_scroll=0;selected_file=-1;mark_dirty();return;}
+        for(int row=0;row<10;row++){uint64_t i=0;if(!visible_file_at(file_scroll+row,&i))break;if(hit(x,y,278,150+row*40,(int)width-316,32)){selected_file=(int)i;STEVEOS_BOOT_FILE*f=&boot_files[i];if(f->kind==1)current_app=APP_IMAGE;else if(f->kind==2&&f->data){if(boot_name_is_html(f))browser_load_local_file(f);else load_text_file(f);}mark_dirty();return;}}
+    }
     else if(current_app==APP_SETTINGS){if(hit(x,y,42,136,(int)width-84,54))light_theme^=1;else if(hit(x,y,42,202,(int)width-84,54)){pointer_scale=pointer_scale>=4?1:pointer_scale+1;native_pointer_set_scale(pointer_scale);}else if(hit(x,y,42,308,(int)width-84,54)){accent_id=(uint8_t)((accent_id+1)&3u);}mark_dirty();}
     else if(current_app==APP_CONTROL){
         for(int i=0;i<8;i++){int col=i%2,row=i/2,rx=42+col*300,ry=114+row*76;if(hit(x,y,rx,ry,280,60)){const int targets[]={APP_SETTINGS,APP_SETTINGS,APP_BROWSER,APP_FILES,APP_TASKS,APP_SYSINFO,APP_FILES,APP_ABOUT};launch_app(targets[i]);return;}}
@@ -818,7 +850,13 @@ static void handle_scan(uint8_t s){
     if(menu_open){if(current_app==APP_DESKTOP){}menu_open=0;return;}
     if(current_app==APP_EDITOR){note_key(s);return;}if(current_app==APP_BROWSER){browser_key(s);return;}if(current_app==APP_CALC){calc_key(s);return;}if(current_app==APP_TERMINAL){terminal_key(s);return;}
     if(current_app==APP_CONTROL){if(s>=2&&s<=9){const int targets[]={APP_SETTINGS,APP_SETTINGS,APP_BROWSER,APP_FILES,APP_TASKS,APP_SYSINFO,APP_FILES,APP_ABOUT};launch_app(targets[s-2]);return;}mark_dirty();return;}
-    if(current_app==APP_FILES){if(s==0x48&&file_scroll>0)file_scroll--;else if(s==0x50&&file_scroll+10<(int)boot_info->boot_file_count)file_scroll++;else if(s==0x1C&&selected_file>=0){STEVEOS_BOOT_FILE*f=&boot_files[selected_file];if(f->kind==1)current_app=APP_IMAGE;else if(f->kind==2&&f->data)load_text_file(f);}mark_dirty();return;}
+    if(current_app==APP_FILES){
+        if(s>=2&&s<=7){file_filter=(int)(s-2);file_scroll=0;selected_file=-1;}
+        else if(s==0x48&&file_scroll>0)file_scroll--;
+        else if(s==0x50&&file_scroll+10<filtered_count())file_scroll++;
+        else if(s==0x1C&&selected_file>=0){STEVEOS_BOOT_FILE*f=&boot_files[selected_file];if(file_matches(f)){if(f->kind==1)current_app=APP_IMAGE;else if(f->kind==2&&f->data){if(boot_name_is_html(f))browser_load_local_file(f);else load_text_file(f);}}}
+        mark_dirty();return;
+    }
     if(current_app==APP_SETTINGS){if(s==0x4B&&pointer_scale>1)pointer_scale--;else if(s==0x4D&&pointer_scale<4)pointer_scale++;else if(s==0x48&&accent_id>0)accent_id--;else if(s==0x50)accent_id=(uint8_t)((accent_id+1)&3u);native_pointer_set_scale(pointer_scale);mark_dirty();return;}
     mark_dirty();
 }
