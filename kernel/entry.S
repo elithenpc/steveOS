@@ -13,13 +13,15 @@ _start:
     mov %rsi, %rsp
     andq $-16, %rsp
 
-    call native_gdt_init
+    /* Keep the firmware's GDT and IDT alive while SteveOS retains UEFI
+     * services for the network bridge. Our paging map is identity-mapped,
+     * so native code and MMIO remain directly addressable. */
     mov %r12, %rdi
     call native_paging_init
-    call native_idt_init
 
     mov %r12, %rdi
     call native_input_bind
+    sti
 
     mov %r12, %rdi
     call kernel_main
