@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include "kernel.h"
 #include "bootinfo.h"
+#include "network.h"
 
 extern const unsigned char _binary_build_native_kernel_raw_start[];
 extern const unsigned char _binary_build_native_kernel_raw_end[];
@@ -202,18 +203,25 @@ EFI_STATUS steveos_kernel_boot(EFI_HANDLE image_handle,
                                       _binary_build_native_kernel_raw_start);
     const UINTN kernel_pages = (kernel_size + 4095) / 4096;
     const UINTN stack_pages = 16;
+    UINT64 fb_bytes64 = (UINT64)gop->Mode->Info->PixelsPerScanLine *
+                        (UINT64)gop->Mode->Info->VerticalResolution * 4ULL;
+    const UINTN backbuffer_pages = (UINTN)((fb_bytes64 + 4095ULL) / 4096ULL);
+
     EFI_PHYSICAL_ADDRESS kernel_addr = allocate_kernel_pages(kernel_pages);
     EFI_PHYSICAL_ADDRESS stack_addr = allocate_pages(stack_pages);
+    EFI_PHYSICAL_ADDRESS backbuffer_addr = allocate_pages(backbuffer_pages);
     STEVEOS_BOOT_INFO *boot = AllocatePool(sizeof(STEVEOS_BOOT_INFO));
-    if (!kernel_addr || !stack_addr || !boot) {
+    if (!kernel_addr || !stack_addr || !backbuffer_addr || !boot) {
         if (kernel_addr) uefi_call_wrapper(BS->FreePages, 2, kernel_addr, kernel_pages);
         if (stack_addr) uefi_call_wrapper(BS->FreePages, 2, stack_addr, stack_pages);
+        if (backbuffer_addr) uefi_call_wrapper(BS->FreePages, 2, backbuffer_addr, backbuffer_pages);
         if (boot) FreePool(boot);
         return EFI_OUT_OF_RESOURCES;
     }
 
     CopyMem((VOID *)(UINTN)kernel_addr,
             _binary_build_native_kernel_raw_start, kernel_size);
+    ZeroMem((VOID *)(UINTN)backbuffer_addr, (UINTN)fb_bytes64);
     ZeroMem(boot, sizeof(*boot));
     boot->magic = STEVEOS_BOOT_MAGIC;
     boot->framebuffer_base = gop->Mode->FrameBufferBase;
@@ -228,6 +236,10 @@ EFI_STATUS steveos_kernel_boot(EFI_HANDLE image_handle,
     boot->kernel_stack_top = stack_addr + stack_pages * 4096ULL - 16;
     boot->uefi_get_variable = (UINT64)(UINTN)RT->GetVariable;
     boot->uefi_set_variable = (UINT64)(UINTN)RT->SetVariable;
+    boot->uefi_get_time = (UINT64)(UINTN)RT->GetTime;
+    boot->uefi_http_get = (UINT64)(UINTN)steveos_http_get;
+    boot->backbuffer_base = backbuffer_addr;
+    boot->backbuffer_size = fb_bytes64;
     (void)snapshot_boot_files(image_handle, boot);
 
     EFI_MEMORY_DESCRIPTOR *map = NULL;
@@ -238,6 +250,7 @@ EFI_STATUS steveos_kernel_boot(EFI_HANDLE image_handle,
     if (EFI_ERROR(st)) {
         uefi_call_wrapper(BS->FreePages, 2, kernel_addr, kernel_pages);
         uefi_call_wrapper(BS->FreePages, 2, stack_addr, stack_pages);
+        uefi_call_wrapper(BS->FreePages, 2, backbuffer_addr, backbuffer_pages);
         FreePool(boot);
         return st;
     }
@@ -246,20 +259,12 @@ EFI_STATUS steveos_kernel_boot(EFI_HANDLE image_handle,
     boot->memory_descriptor_size = descriptor_size;
     boot->memory_descriptor_version = descriptor_version;
 
-    st = uefi_call_wrapper(BS->ExitBootServices, 2, image_handle, map_key);
-    if (EFI_ERROR(st)) {
-        FreePool(map);
-        map = NULL;
-        st = get_memory_map(&map, &map_size, &map_key,
-                            &descriptor_size, &descriptor_version);
-        if (EFI_ERROR(st)) return st;
-        boot->memory_map = (UINT64)(UINTN)map;
-        boot->memory_map_size = map_size;
-        boot->memory_descriptor_size = descriptor_size;
-        boot->memory_descriptor_version = descriptor_version;
-        st = uefi_call_wrapper(BS->ExitBootServices, 2, image_handle, map_key);
-        if (EFI_ERROR(st)) return st;
-    }
+    /* Keep UEFI Boot Services alive. The native desktop uses the firmware's
+     * HTTP protocol as its network bridge, so ExitBootServices() would make
+     * the browser impossible. The native framebuffer and input drivers still
+     * own their hardware paths, while firmware services remain available for
+     * explicit browser requests. */
+    (void)map_key;
 
     STEVEOS_NATIVE_ENTRY entry = (STEVEOS_NATIVE_ENTRY)(UINTN)kernel_addr;
     entry(boot, (VOID *)(UINTN)boot->kernel_stack_top);
