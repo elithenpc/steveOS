@@ -9,14 +9,14 @@ ROOT = Path("third_party/mint-y-icons/usr/share/icons/Mint-Y")
 OUT = Path("build/mint_icons.raw")
 
 ICONS = [
-    ("browser.png", "WEB"),
-    ("accessories-calculator.png", "CALC"),
-    ("accessories-text-editor.png", "NOTE"),
-    ("folder.png", "FILES"),
-    ("Terminal.png", "TERM"),
-    ("gnome-system-monitor.png", "TASK"),
-    ("cinnamon-preferences-color.png", "SET"),
-    ("calendar.png", "DATE"),
+    ("apps/48/browser.png", "WEB"),
+    ("apps/48/accessories-calculator.png", "CALC"),
+    ("apps/48/accessories-text-editor.png", "NOTE"),
+    ("places/48/folder.png", "FILES"),
+    ("apps/48/Terminal.png", "TERM"),
+    ("apps/48/gnome-system-monitor.png", "TASK"),
+    ("apps/48/cinnamon-preferences-color.png", "SET"),
+    ("apps/48/calendar.png", "DATE"),
 ]
 
 def main() -> None:
@@ -24,7 +24,7 @@ def main() -> None:
     blob = bytearray()
     blob += struct.pack("<II", 0x43494D59, len(ICONS))
     for filename, name in ICONS:
-        path = ROOT / "apps" / "48" / filename
+        path = ROOT / filename
         if not path.exists():
             raise SystemExit(f"missing Mint-Y icon: {path}")
         with Image.open(path).convert("RGBA") as im:
