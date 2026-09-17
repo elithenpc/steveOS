@@ -357,6 +357,8 @@ static void draw_editor(void){
     text(40,(int)height-98,"ARROWS MOVE  BACKSPACE DELETE  ENTER NEWLINE  F5 SAVE",sub_color(),1);taskbar();
 }
 
+static void parse_browser_html(void);
+
 static int boot_name_is_html(const STEVEOS_BOOT_FILE*f){
     if(!f)return 0;
     char n[96];file_name(f,n,sizeof(n));
