@@ -69,6 +69,11 @@ static uint8_t terminal_count;
 static char browser_url[BROWSER_URL_MAX+1]="http://neverssl.com/";
 static char browser_raw[BROWSER_RAW_MAX];
 static size_t browser_raw_len;
+static char browser_image_raw[131072];
+static size_t browser_image_len;
+static uint8_t browser_image_loaded;
+static char browser_image_url[BROWSER_URL_MAX+1];
+static char browser_image_alt[64];
 static char browser_text[BROWSER_TEXT_MAX];
 static char browser_title[96];
 static char browser_link_urls[BROWSER_LINKS][BROWSER_LINK_MAX+1];
@@ -218,6 +223,7 @@ static void save_settings(void){
 static void browser_copy_url(char*out,const char*in);
 static int browser_fetch(void);
 static void browser_tab_switch(int index);
+static void browser_load_first_image(void);
 static void terminal_add(const char*s);
 
 static void load_bookmarks(void){
@@ -459,7 +465,7 @@ static void browser_load_local_file(const STEVEOS_BOOT_FILE*f){
     const uint8_t*d=(const uint8_t*)(uintptr_t)f->data;
     for(size_t i=0;i<n;i++)browser_raw[i]=(char)d[i];
     browser_raw[n]=0;
-    browser_raw_len=n;
+    browser_raw_len=n;browser_image_url[0]=0;browser_image_alt[0]=0;browser_image_loaded=0;browser_image_len=0;
     parse_browser_html();
     char path[96];file_name(f,path,sizeof(path));
     const char*prefix="file:///";
@@ -580,6 +586,13 @@ static void resolve_url(const char*href,char*out,size_t cap){
     out[(base+n<cap)?base+n:cap-1]=0;
 }
 static void parse_browser_html(void){
+            if(ci_eq(name,"img")&&!closing&&!browser_image_url[0]){
+                const char*sp=find_ci(tag,"src");
+                if(sp&&sp<browser_raw+j){sp+=3;while(*sp==' '||*sp=='=')sp++;if(*sp=='"'||*sp=='\\'')sp++;resolve_url(sp,browser_image_url,sizeof(browser_image_url));}
+                const char*ap=find_ci(tag,"alt");
+                if(ap&&ap<browser_raw+j){ap+=3;while(*ap==' '||*ap=='=')ap++;if(*ap=='"'||*ap=='\\'')ap++;size_t an=0;while(ap[an]&&ap[an]!='"'&&ap[an]!='\\''&&ap[an]!=' '&&an+1<sizeof(browser_image_alt)){browser_image_alt[an]=ap[an];an++;}browser_image_alt[an]=0;}
+            }
+
     browser_text[0]=0;browser_title[0]=0;browser_link_count=0;size_t tl=0,i=0;int skip=0,in_a=0;size_t link_len=0;
     while(i<(size_t)BROWSER_RAW_MAX&&browser_raw[i]){
         if(browser_raw[i]=='<'){
@@ -612,6 +625,26 @@ static void browser_history_visit(void){
     browser_history_pos=browser_history_count;
     browser_history_count++;
 }
+static void browser_load_first_image(void){
+    browser_image_loaded=0;browser_image_len=0;
+    if(!browser_image_url[0]||!(begins_ci(browser_image_url,"http://")||begins_ci(browser_image_url,"https://"))||!boot_info->uefi_http_get)return;
+    HTTPGET get=(HTTPGET)(uintptr_t)boot_info->uefi_http_get;
+    uint16_t u16[BROWSER_URL_MAX+2];size_t n=0;
+    while(browser_image_url[n]&&n+1<sizeof(u16)/sizeof(u16[0])){u16[n]=(uint16_t)(unsigned char)browser_image_url[n];n++;}u16[n]=0;
+    uint64_t len=0,status=0;uint64_t st=get(u16,browser_image_raw,sizeof(browser_image_raw)-1,&len,(uint32_t*)&status);
+    if(st==0&&len>=54&&len<=sizeof(browser_image_raw)-1&&browser_image_raw[0]=='B'&&browser_image_raw[1]=='M'){browser_image_len=(size_t)len;browser_image_loaded=1;}
+}
+static void draw_browser_image(void){
+    if(!browser_image_loaded||browser_image_len<54)return;
+    const uint8_t*d=(const uint8_t*)browser_image_raw;uint32_t off=read32le(d+10),w=read32le(d+18),hr=read32le(d+22);int32_t h=(int32_t)hr;uint16_t planes=read16le(d+26),bpp=read16le(d+28);
+    if(!w||!h||planes!=1||(bpp!=24&&bpp!=32))return;
+    uint32_t ah=(uint32_t)(h<0?-h:h),row=((w*bpp+31)/32)*4;
+    if((uint64_t)off+(uint64_t)row*ah>browser_image_len)return;
+    uint32_t dw=220,dh=(uint64_t)ah*dw/w;if(dh>150){dh=150;dw=(uint64_t)w*dh/ah;}
+    int ox=(int)width-270,oy=205,bytes=bpp/8;
+    fill_rect(ox-8,oy-8,dw+16,dh+16,bg_color());
+    for(uint32_t y=0;y<dh;y++){uint32_t sy=(uint64_t)y*ah/dh;if(h>0)sy=ah-1-sy;for(uint32_t x=0;x<dw;x++){uint32_t sx=(uint64_t)x*w/dw;const uint8_t*v=d+off+(uint64_t)sy*row+(uint64_t)sx*bytes;put_pixel(ox+(int)x,oy+(int)y,0xFF000000u|(uint32_t)v[2]|((uint32_t)v[1]<<8)|((uint32_t)v[0]<<16));}}
+}
 static int browser_fetch(void){
     HTTPGET get=(HTTPGET)(uintptr_t)boot_info->uefi_http_get;
     if(!get){browser_status=0;browser_loaded=0;return 0;}
@@ -620,7 +653,7 @@ static int browser_fetch(void){
     uint64_t st=get(u16,browser_raw,BROWSER_RAW_MAX-1,&len,&browser_status);
     if(st!=0||!len){browser_loaded=0;return 0;}
     if(len>=BROWSER_RAW_MAX)len=BROWSER_RAW_MAX-1;
-    browser_raw[len]=0;browser_raw_len=(size_t)len;parse_browser_html();browser_loaded=1;browser_scroll=0;
+    browser_raw[len]=0;browser_raw_len=(size_t)len;browser_image_url[0]=0;browser_image_alt[0]=0;parse_browser_html();browser_load_first_image();browser_loaded=1;browser_scroll=0;
     browser_copy_url(browser_tabs[browser_current_tab],browser_url);
     browser_history_visit();
     return 1;
@@ -680,6 +713,7 @@ static void draw_browser(void){
     else{
         fill_rect(34,160,(int)width-310,(int)height-286,bg_color());text_clip(52,176,browser_title[0]?browser_title:"UNTITLED",accent_color(),2,(int)width-350);
         int x=52,y=214,lines=0;const char*p=browser_text;int skip=browser_scroll;while(*p&&skip>0){if(*p=='\n')skip--;p++;}while(*p&&lines<((int)height-330)/16){int used=0;while(*p&&*p!='\n'&&used<((int)width-350)/6){glyph(x+used*6,y+lines*16,*p,text_color(),1);used++;p++;}while(*p&&*p!='\n')p++;if(*p=='\n')p++;lines++;}
+        if(browser_image_loaded){draw_browser_image();if(browser_image_alt[0])text((int)width-270,372,browser_image_alt,text_color(),1);}
         fill_rect((int)width-286,160,252,(int)height-286,panel2_color());text( (int)width-270,178,"LINKS",sub_color(),1);for(int i=0;i<browser_link_count;i++){int yy=204+i*42;fill_rect((int)width-270,yy,220,32,panel_color());char num[2]={(char)('1'+i),0};text((int)width-258,yy+10,num,accent_color(),1);text_clip((int)width-238,yy+10,browser_link_text[i],text_color(),1,178);}
     }
     text(40,(int)height-98,"HTTP BROWSER  •  CTRL+L ADDRESS  •  CTRL+D SAVE BOOKMARK  •  CTRL+B OPEN BOOKMARK",sub_color(),1);taskbar();
