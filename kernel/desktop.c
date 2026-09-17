@@ -534,15 +534,51 @@ static void draw_browser(void){
 }
 
 static void terminal_add(const char*s){if(terminal_count<TERM_LINES){size_t i=0;while(s[i]&&i<63){terminal_lines[terminal_count][i]=s[i];i++;}terminal_lines[terminal_count][i]=0;terminal_count++;}else{for(int r=1;r<TERM_LINES;r++)for(int c=0;c<64;c++)terminal_lines[r-1][c]=terminal_lines[r][c];size_t i=0;while(s[i]&&i<63){terminal_lines[TERM_LINES-1][i]=s[i];i++;}terminal_lines[TERM_LINES-1][i]=0;}}
+static int terminal_file_match(const char*a,const char*b){
+    while(*a&&*b){
+        char x=*a,y=*b;
+        if(x>='a'&&x<='z')x=(char)(x-'a'+'A');
+        if(y>='a'&&y<='z')y=(char)(y-'a'+'A');
+        if(x!=y)return 0;
+        a++;b++;
+    }
+    return *a==0;
+}
+static void terminal_open_file(const char*path){
+    for(uint64_t i=0;i<boot_info->boot_file_count;i++){
+        STEVEOS_BOOT_FILE*f=&boot_files[i];char name[96];file_name(f,name,sizeof(name));
+        if(terminal_file_match(name,path)){
+            selected_file=(int)i;
+            if(f->kind==1)current_app=APP_IMAGE;
+            else if(f->kind==2&&f->data){if(boot_name_is_html(f))browser_load_local_file(f);else load_text_file(f);}
+            else current_app=APP_FILES;
+            mark_dirty();
+            return;
+        }
+    }
+    terminal_add("FILE NOT FOUND");
+}
+static void terminal_list(void){
+    if(!boot_files||!boot_info)return;
+    uint64_t start=0,end=boot_info->boot_file_count;
+    if(end>6)end=6;
+    for(uint64_t i=start;i<end;i++){char name[96];file_name(&boot_files[i],name,sizeof(name));terminal_add(name);}
+    if(boot_info->boot_file_count>6)terminal_add("... USE FILE MANAGER FOR MORE");
+}
+
 static void terminal_exec(void){
     terminal_input[terminal_len]=0;
-    if(str_eq(terminal_input,"HELP"))terminal_add("HELP MEM APPS VERSION BROWSE CLEAR REBOOT HALT DATE");
+    if(str_eq(terminal_input,"HELP"))terminal_add("HELP LS OPEN MEM APPS SYSINFO VERSION BROWSE REFRESH CLEAR REBOOT HALT DATE");
+    else if(str_eq(terminal_input,"LS"))terminal_list();
+    else if(begins_ci(terminal_input,"OPEN ")){size_t i=5;while(terminal_input[i]==' ')i++;terminal_open_file(terminal_input+i);}
     else if(str_eq(terminal_input,"MEM"))terminal_add("TASKS SHOW LIVE MEMORY TOTAL AND LARGEST REGION");
-    else if(str_eq(terminal_input,"APPS"))terminal_add("WEB CALC NOTE FILES IMAGE SETTINGS TASKS TERM DATE CONTROL ABOUT");
+    else if(str_eq(terminal_input,"APPS"))terminal_add("WEB CALC NOTE FILES IMAGE SETTINGS TASKS TERM DATE CONTROL ABOUT SYSINFO");
+    else if(str_eq(terminal_input,"SYSINFO")){current_app=APP_SYSINFO;mark_dirty();}
     else if(str_eq(terminal_input,"VERSION"))terminal_add("STEVEOS NATIVE DESKTOP 0.9");
-    else if(str_eq(terminal_input,"DATE"))terminal_add("OPEN CALENDAR FOR FIRMWARE CLOCK");
+    else if(str_eq(terminal_input,"DATE")){current_app=APP_CALENDAR;mark_dirty();}
     else if(str_eq(terminal_input,"BROWSE")){current_app=APP_BROWSER;browser_focus=1;mark_dirty();}
     else if(begins_ci(terminal_input,"BROWSE ")){size_t i=7;while(terminal_input[i]==' ')i++;size_t n=0;browser_url[0]=0;if(!begins_ci(terminal_input+i,"http://")&&!begins_ci(terminal_input+i,"https://")){const char*p="http://";while(*p)browser_url[n++]=*p++;}while(terminal_input[i]&&n+1<BROWSER_URL_MAX)browser_url[n++]=terminal_input[i++];browser_url[n]=0;current_app=APP_BROWSER;browser_focus=0;browser_fetch();mark_dirty();}
+    else if(str_eq(terminal_input,"REFRESH")){if(current_app==APP_BROWSER&&browser_url[0])browser_fetch();else mark_dirty();}
     else if(str_eq(terminal_input,"CLEAR"))terminal_count=0;else if(str_eq(terminal_input,"REBOOT"))native_reboot();else if(str_eq(terminal_input,"HALT"))native_halt();else if(terminal_len)terminal_add("UNKNOWN COMMAND");terminal_len=0;terminal_input[0]=0;
 }
 static void draw_terminal(void){window_bar("TERMINAL","NATIVE SHELL  TYPE HELP");for(int i=0;i<TERM_LINES;i++)text(42,116+i*21,terminal_lines[i],text_color(),1);fill_rect(38,(int)height-150,(int)width-76,34,panel2_color());text(48,(int)height-141,">",accent_color(),1);text(62,(int)height-141,terminal_input,text_color(),1);text(40,(int)height-98,"ENTER RUNS COMMAND  BACKSPACE EDITS",sub_color(),1);taskbar();}
