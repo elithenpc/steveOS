@@ -7,8 +7,8 @@
 #define CALC_MAX 191
 #define TERM_MAX 191
 #define TERM_LINES 12
-#define BROWSER_RAW_MAX 12288
-#define BROWSER_TEXT_MAX 8192
+#define BROWSER_RAW_MAX 32768
+#define BROWSER_TEXT_MAX 16384
 #define BROWSER_URL_MAX 191
 #define BROWSER_LINKS 8
 #define BROWSER_LINK_MAX 159
@@ -435,16 +435,34 @@ static void resolve_url(const char*href,char*out,size_t cap){
     while(*href==' '||*href=='\t'||*href=='\n')href++;
     size_t n=0;while(href[n]&&href[n]!='\"'&&href[n]!='\''&&href[n]!=' '&&href[n]!='\t'&&n+1<cap)n++;
     if(!n||href[0]=='#'||begins_ci(href,"javascript:")||begins_ci(href,"mailto:"))return;
-    if(begins_ci(href,"http://")||begins_ci(href,"https://")){for(size_t i=0;i<n&&i+1<cap;i++)out[i]=href[i];out[n<cap?n:cap-1]=0;return;}
+    if(begins_ci(href,"http://")||begins_ci(href,"https://")){
+        for(size_t i=0;i<n&&i+1<cap;i++)out[i]=href[i];
+        out[n<cap?n:cap-1]=0;return;
+    }
+    const char*scheme=find_ci(browser_url,"://");
+    size_t prefix=scheme?(size_t)(scheme-browser_url)+3:0;
+    size_t authority=prefix;
+    while(browser_url[authority]&&browser_url[authority]!='/'&&authority+1<BROWSER_URL_MAX)authority++;
     if(href[0]=='/'&&href[1]=='/'){
-        out[0]=browser_url[0]=='h'&&browser_url[4]=='s'?'h':'h';out[1]='t';out[2]='t';out[3]='p';out[4]=':';for(size_t i=0;i<n&&i+6<cap;i++)out[i+5]=href[i];out[n+5<cap?n+5:cap-1]=0;return;
+        const char*proto=(prefix>=3&&browser_url[4]=='s')?"https:":"http:";
+        size_t p=0;while(proto[p]&&p+1<cap)out[p]=proto[p++];
+        for(size_t i=0;i<n&&p+1<cap;i++)out[p+i]=href[i];
+        p+=n;out[p<cap?p:cap-1]=0;return;
     }
-    const char*scheme_end=find_ci(browser_url,"://");size_t prefix=scheme_end?(size_t)(scheme_end-browser_url)+3:0;size_t authority=prefix;while(browser_url[authority]&&browser_url[authority]!='/'&&authority+1<BROWSER_URL_MAX)authority++;
     if(href[0]=='/'){
-        size_t m=authority<n+prefix?authority:authority;for(size_t i=0;i<m&&i+1<cap;i++)out[i]=browser_url[i];for(size_t i=0;i<n&&m+i+1<cap;i++)out[m+i]=href[i];out[(m+n<cap)?m+n:cap-1]=0;return;
+        size_t p=authority;
+        for(size_t i=0;i<p&&i+1<cap;i++)out[i]=browser_url[i];
+        for(size_t i=0;i<n&&p+i+1<cap;i++)out[p+i]=href[i];
+        out[(p+n<cap)?p+n:cap-1]=0;return;
     }
-    size_t base=prefix;for(size_t i=prefix;i<authority;i++){};for(size_t i=authority;i>prefix&&browser_url[i-1]!='/' ;i--)base=i-1;
-    for(size_t i=0;i<base&&i+1<cap;i++)out[i]=browser_url[i];if(base&&out[base-1]!='/'){out[base++]='/';}for(size_t i=0;i<n&&base+i+1<cap;i++)out[base+i]=href[i];out[(base+n<cap)?base+n:cap-1]=0;
+    size_t base=authority;
+    if(base&&browser_url[base-1]!='/'){
+        size_t q=base;while(q>prefix&&browser_url[q-1]!='/')q--;base=q;
+    }
+    for(size_t i=0;i<base&&i+1<cap;i++)out[i]=browser_url[i];
+    if(base&&out[base-1]!='/'&&base+1<cap)out[base++]='/';
+    for(size_t i=0;i<n&&base+i+1<cap;i++)out[base+i]=href[i];
+    out[(base+n<cap)?base+n:cap-1]=0;
 }
 static void parse_browser_html(void){
     browser_text[0]=0;browser_title[0]=0;browser_link_count=0;size_t tl=0,i=0;int skip=0,in_a=0;size_t link_len=0;
@@ -464,7 +482,7 @@ static void parse_browser_html(void){
             i=j+1;continue;
         }
         if(skip){i++;continue;}
-        if(browser_raw[i]=='&'){size_t j=i+1;while(browser_raw[j]&&browser_raw[j]!=';'&&j-i<12)j++;if(browser_raw[j]==';'){entity_char(browser_raw+i+1,j-i-1,browser_text,&tl);if(in_a&&browser_link_count<BROWSER_LINKS&&link_len+1<47)browser_link_text[browser_link_count][link_len++]=browser_text[tl-1],browser_link_text[browser_link_count][link_len]=0;i=j+1;continue;}}
+        if(browser_raw[i]=='&'){size_t j=i+1;while(browser_raw[j]&&browser_raw[j]!=';'&&j-i<12)j++;if(browser_raw[j]==';'){entity_char(browser_raw+i+1,j-i,browser_text,&tl);if(in_a&&browser_link_count<BROWSER_LINKS&&link_len+1<47)browser_link_text[browser_link_count][link_len++]=browser_text[tl-1],browser_link_text[browser_link_count][link_len]=0;i=j+1;continue;}}
         char c=browser_raw[i++];if(c=='\r')continue;if(c=='\n'){append_text(browser_text,&tl,BROWSER_TEXT_MAX,' ');if(in_a&&browser_link_count<BROWSER_LINKS&&link_len+1<47)browser_link_text[browser_link_count][link_len++]=' ';continue;}if(tl&&browser_text[tl-1]==' '&&c==' ')continue;append_text(browser_text,&tl,BROWSER_TEXT_MAX,c);if(in_a&&browser_link_count<BROWSER_LINKS&&link_len+1<47){browser_link_text[browser_link_count][link_len++]=c;browser_link_text[browser_link_count][link_len]=0;}
     }
     if(!browser_title[0]){size_t n=0;for(size_t k=0;browser_text[k]&&n+1<sizeof(browser_title)&&k<120;k++){if(browser_text[k]!='\n'&&browser_text[k]!='\r'){browser_title[n++]=browser_text[k];}}browser_title[n]=0;}
