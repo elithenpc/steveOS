@@ -99,6 +99,10 @@ void native_pointer_show(void) {
 }
 
 void native_pointer_move(int32_t dx, int32_t dy, uint8_t buttons) {
+    /* Hardware reports are small relative deltas. Clamping protects the native
+     * framebuffer cursor from malformed/vendor reports becoming huge jumps. */
+    if (dx > 48) dx = 48; else if (dx < -48) dx = -48;
+    if (dy > 48) dy = 48; else if (dy < -48) dy = -48;
     mouse_buttons=buttons;
     if(!mouse_fb||!mouse_width||!mouse_height)return;
     int32_t nx=(int32_t)mouse_x+dx, ny=(int32_t)mouse_y+dy;
