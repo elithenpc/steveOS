@@ -1,25 +1,38 @@
 # steveOS
 
-A tiny x86-64 operating system project built as a UEFI-first desktop experiment.
+A growing x86-64 operating system project with a native framebuffer desktop, real firmware-backed networking, hardware input drivers, persistent settings, and a Linux Mint-inspired desktop experience.
+
+## Current milestone: native desktop 0.9
 
 ## Current milestone: 0.2
 
 steveOS boots as a UEFI application, selects a high-resolution GOP mode, runs a safe boot diagnostics screen, and launches a graphical desktop with mouse and keyboard input.
 
-The current desktop includes:
+The native desktop now includes:
 
-- Terminal and basic system commands
-- Task manager foundation
-- UEFI filesystem browser
-- System information
-- BLEHHH image viewer
-- Settings with light/dark theme and mouse scaling
-- SteveOS installer for copying the bootloader to another EFI system partition
-- A small firmware-backed web browser that can enter a URL, issue an HTTP GET through UEFI HTTP services, and display extracted page text
+- Mint-style application menu and panel/taskbar
+- Real Mint-Y application icons packed into the native kernel image
+- Web browser with on-demand UEFI HTTP fetches, HTML text extraction, links, scrolling, and back/forward history
+- Calculator with integer expression parsing, parentheses, operator precedence, and unary minus
+- Persistent text editor / notepad backed by UEFI NVRAM
+- Recursive boot-volume file manager with text/image loading
+- BMP and embedded-image viewer
+- Settings with persistent theme and pointer scaling
+- Task manager with native subsystem visibility and memory reporting
+- Calendar and live firmware clock
+- Hardware Control Center
+- Native terminal with application/network/system commands
+- Global close button, taskbar launchers, keyboard shortcuts, and start menu
 
-Networking is deliberately not probed during early boot. Web requests are on-demand from the desktop so a firmware network driver cannot stall normal startup.
+
+
+Networking is deliberately not probed during early boot. Web requests are on-demand from the desktop so firmware networking is only entered when the user asks the browser to load a page.
 
 The GitHub Actions workflow builds `BOOTX64.EFI` and a 64 MiB FAT32 `steveOS.img` USB image automatically.
+
+## Mint integration
+
+SteveOS pins the Linux Mint Mint-Y icon theme as a third-party submodule and converts a small selected set of icons into a compact native resource pack during CI. The desktop organisation and visual language are inspired by Cinnamon's traditional panel/menu model, while the freestanding renderer and application code remain SteveOS code. See [THIRD_PARTY.md](THIRD_PARTY.md).
 
 ## Current architecture
 
