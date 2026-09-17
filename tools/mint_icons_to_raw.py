@@ -17,6 +17,14 @@ ICONS = [
     ("apps/64/gnome-system-monitor.png", "TASK"),
     ("apps/64/cinnamon-preferences-color.png", "SET"),
     ("apps/64/calendar.png", "DATE"),
+    ("places/64/user-home.png", "HOME"),
+    ("places/64/folder-documents.png", "DOCS"),
+    ("places/64/folder-download.png", "DOWN"),
+    ("places/64/folder-pictures.png", "PICS"),
+    ("places/64/gtk-network.png", "NET"),
+    ("apps/64/cinnamon-preferences-desktop-display.png", "DISPLAY"),
+    ("apps/64/cs-power.png", "POWER"),
+    ("apps/64/hwinfo.png", "INFO"),
 ]
 
 def main() -> None:
