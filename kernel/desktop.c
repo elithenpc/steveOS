@@ -80,13 +80,18 @@ static uint8_t browser_history_count;
 static uint8_t browser_history_pos;
 static uint8_t browser_history_lock;
 static char browser_history[8][BROWSER_URL_MAX+1];
+static uint8_t browser_bookmark_count;
+static char browser_bookmarks[8][BROWSER_URL_MAX+1];
+static uint8_t ctrl_down,alt_down;
 static uint8_t shift_down;
 static uint8_t dirty=1;
 
 static const GUID note_guid={0x53544556,0x4F53,0x4E56,0x00010001};
 static const GUID settings_guid={0x53544556,0x4F53,0x4E56,0x00010002};
+static const GUID bookmarks_guid={0x53544556,0x4F53,0x4E56,0x00010003};
 static const uint16_t note_name[]={'S','t','e','v','e','O','S','N','o','t','e',0};
 static const uint16_t settings_name[]={'S','t','e','v','e','O','S','S','e','t','t','i','n','g','s',0};
+static const uint16_t bookmarks_name[]={'S','t','e','v','e','O','S','B','o','o','k','m','a','r','k','s',0};
 
 static const uint8_t letters[26][5]={
 {0x3E,0x09,0x09,0x09,0x3E},{0x7F,0x49,0x49,0x49,0x36},{0x3E,0x41,0x41,0x41,0x22},{0x7F,0x41,0x41,0x22,0x1C},
@@ -199,6 +204,39 @@ static void save_settings(void){
     if(!boot_info->uefi_set_variable)return;
     SETVAR set=(SETVAR)(uintptr_t)boot_info->uefi_set_variable;SETTINGS s={0x53545654u,light_theme,pointer_scale,accent_id,0,0};set((uint16_t*)settings_name,(GUID*)&settings_guid,7,sizeof(s),&s);
 }
+static void load_bookmarks(void){
+    browser_bookmark_count=0;
+    for(int i=0;i<8;i++)browser_bookmarks[i][0]=0;
+    if(!boot_info->uefi_get_variable)return;
+    struct {uint32_t magic;uint8_t count;uint8_t pad[3];char url[8][BROWSER_URL_MAX+1];} data={{0}};
+    GETVAR get=(GETVAR)(uintptr_t)boot_info->uefi_get_variable;uint32_t a=0;uint64_t z=sizeof(data);
+    if(get((uint16_t*)bookmarks_name,(GUID*)&bookmarks_guid,&a,&z,&data)==0&&data.magic==0x53545642u){
+        browser_bookmark_count=data.count>8?8:data.count;
+        for(int i=0;i<browser_bookmark_count;i++)browser_copy_url(browser_bookmarks[i],data.url[i]);
+    }
+}
+static void save_bookmarks(void){
+    if(!boot_info->uefi_set_variable)return;
+    struct {uint32_t magic;uint8_t count;uint8_t pad[3];char url[8][BROWSER_URL_MAX+1];} data={{0}};
+    data.magic=0x53545642u;data.count=browser_bookmark_count>8?8:browser_bookmark_count;
+    for(int i=0;i<data.count;i++)browser_copy_url(data.url[i],browser_bookmarks[i]);
+    SETVAR set=(SETVAR)(uintptr_t)boot_info->uefi_set_variable;
+    set((uint16_t*)bookmarks_name,(GUID*)&bookmarks_guid,7,sizeof(data),&data);
+}
+static void bookmark_current(void){
+    if(!browser_url[0])return;
+    for(int i=0;i<browser_bookmark_count;i++)if(ci_eq(browser_bookmarks[i],browser_url)){terminal_add("BOOKMARK ALREADY SAVED");return;}
+    int slot=browser_bookmark_count<8?browser_bookmark_count:7;
+    if(browser_bookmark_count<8)browser_bookmark_count++;
+    for(int i=slot;i>0&&browser_bookmark_count==8;i--)browser_copy_url(browser_bookmarks[i],browser_bookmarks[i-1]);
+    browser_copy_url(browser_bookmarks[slot],browser_url);
+    save_bookmarks();
+}
+static void open_first_bookmark(void){
+    if(!browser_bookmark_count)return;
+    browser_copy_url(browser_url,browser_bookmarks[0]);browser_focus=0;browser_fetch();
+}
+
 static void load_note(void){
     note_len=note_cursor=0;note_dirty=0;
     if(!boot_info->uefi_get_variable)return;
@@ -719,6 +757,13 @@ static char key_char(uint8_t s){
 }
 static char shifted(char c){if(c>='a'&&c<='z')return(char)(c-'a'+'A');if(c>='0'&&c<='9'){const char*s=")!@#$%^&*(";return s[c-'0'];}if(c=='-')return'_';if(c=='=')return'+';if(c=='[')return'{';if(c==']')return'}';if(c==';')return':';if(c=='\'')return'"';if(c==',')return'<';if(c=='.')return'>';if(c=='/')return'?';if(c=='\\')return'|';return c;}
 static void browser_key(uint8_t s){
+    if(ctrl_down){
+        if(s==0x26){browser_focus=1;return;}
+        if(s==0x13){if(browser_url[0])browser_fetch();return;}
+        if(s==0x20){bookmark_current();return;}
+        if(s==0x30){open_first_bookmark();return;}
+    }
+
     if(s==0x2A||s==0x36){shift_down=1;return;}
     if(s==0xAA||s==0xB6){shift_down=0;return;}
     if(s==0x1C){
@@ -759,6 +804,10 @@ static void handle_scan(uint8_t s){
     if(!s)return;
     if(s==0x2A||s==0x36){shift_down=1;return;}
     if(s==0xAA||s==0xB6){shift_down=0;return;}
+    if(s==0x1D){ctrl_down=1;return;}
+    if(s==0x9D){ctrl_down=0;return;}
+    if(s==0x38){alt_down=1;return;}
+    if(s==0xB8){alt_down=0;return;}
     if(s&0x80)return;
     if(s==0x3B){launch_app(APP_BROWSER);return;}if(s==0x3C){launch_app(APP_CALC);return;}if(s==0x3D){launch_app(APP_EDITOR);return;}if(s==0x3E){launch_app(APP_FILES);return;}if(s==0x3F){if(current_app==APP_EDITOR)save_note();else if(current_app==APP_SETTINGS)save_settings();else if(current_app==APP_BROWSER&&browser_url[0])browser_fetch();mark_dirty();return;}if(s==0x40){launch_app(APP_TASKS);return;}if(s==0x41){launch_app(APP_TERMINAL);return;}if(s==0x42){launch_app(APP_CALENDAR);return;}if(s==0x43){launch_app(APP_CONTROL);return;}if(s==0x44){launch_app(APP_SYSINFO);return;}if(s==0x57){launch_app(APP_ABOUT);return;}
     if(s==1){current_app=APP_DESKTOP;menu_open=0;mark_dirty();return;}
@@ -777,7 +826,7 @@ static void render(void){
 }
 
 void steveos_desktop_init(STEVEOS_BOOT_INFO *boot){
-    boot_info=boot;boot_files=(STEVEOS_BOOT_FILE*)(uintptr_t)boot->boot_files;framebuffer=(uint32_t*)(uintptr_t)boot->framebuffer_base;width=(uint32_t)boot->width;height=(uint32_t)boot->height;stride=(uint32_t)boot->pixels_per_scanline;memory_stats();init_backbuffer();load_settings();load_note();calc_input[0]=0;terminal_lines[0][0]=0;terminal_add("STEVEOS NATIVE SHELL");terminal_add("TYPE HELP FOR COMMANDS");browser_focus=0;dirty=1;}
+    boot_info=boot;boot_files=(STEVEOS_BOOT_FILE*)(uintptr_t)boot->boot_files;framebuffer=(uint32_t*)(uintptr_t)boot->framebuffer_base;width=(uint32_t)boot->width;height=(uint32_t)boot->height;stride=(uint32_t)boot->pixels_per_scanline;memory_stats();init_backbuffer();load_settings();load_note();load_bookmarks();calc_input[0]=0;terminal_lines[0][0]=0;terminal_add("STEVEOS NATIVE SHELL");terminal_add("TYPE HELP FOR COMMANDS");browser_focus=0;dirty=1;}
 
 void steveos_desktop_run(STEVEOS_BOOT_INFO *boot){
     (void)boot;uint32_t last_x=native_pointer_x(),last_y=native_pointer_y();uint8_t last_b=native_pointer_buttons();
