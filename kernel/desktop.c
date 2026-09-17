@@ -428,7 +428,13 @@ static void draw_image(void){
 }
 
 static char hexch(uint8_t v){return v<10?(char)('0'+v):(char)('A'+v-10);}
-static void status_text(char*out,size_t cap,uint32_t status){if(cap<2)return;int n=0;if(status==0){out[0]=0;return;}out[n++]='H';out[n++]='T';out[n++]='T';out[n++]='P';out[n++]=' ';out[n++]=(char)('0'+(status/100)%10);out[n++]=(char)('0'+(status/10)%10);out[n++]=(char)('0'+status%10);out[n]=0;if((size_t)n>=cap)out[cap-1]=0; (void)hexch;}
+static void status_text(char*out,size_t cap,uint32_t status){
+    if(!out||cap<2){return;}
+    if(!status){out[0]=0;return;}
+    if(cap<9){out[0]=0;return;}
+    out[0]='H';out[1]='T';out[2]='T';out[3]='P';out[4]=' ';
+    out[5]=(char)('0'+(status/100)%10);out[6]=(char)('0'+(status/10)%10);out[7]=(char)('0'+status%10);out[8]=0;
+}
 static void append_text(char*out,size_t*len,size_t cap,char c){if(*len+1<cap){out[(*len)++]=c;out[*len]=0;}}
 static void entity_char(const char*p,size_t n,char*out,size_t*len){
     if(n==4&&begins_ci(p,"amp;"))append_text(out,len,BROWSER_TEXT_MAX,'&');
@@ -521,9 +527,13 @@ static void browser_history_move(int direction){
 }
 static void draw_browser(void){
     window_bar("WEB BROWSER",browser_focus?"ADDRESS ACTIVE  ENTER LOAD  ESC HOME":"UP DOWN SCROLL  1-8 LINKS");
-    fill_rect(34,106,(int)width-68,40,bg_color());stroke_rect(34,106,(int)width-68,40,browser_focus?accent_color():panel2_color());
-    if(browser_url[0])text(46,117,browser_url,text_color(),1);else text(46,117,"TYPE URL THEN ENTER",sub_color(),1);
-    char st[24];status_text(st,sizeof(st),browser_status);if(browser_status){text((int)width-100,118,st,good_color(),1);}
+    int field_w=(int)width-370;
+    fill_rect(34,106,field_w,40,bg_color());stroke_rect(34,106,field_w,40,browser_focus?accent_color():panel2_color());
+    if(browser_url[0])text_clip(46,117,browser_url,text_color(),1,field_w-24);else text(46,117,"TYPE URL THEN ENTER",sub_color(),1);
+    int bx=(int)width-326;
+    const char*bn[]={"B","F","R"};
+    for(int i=0;i<3;i++){fill_rect(bx+i*56,106,50,40,panel2_color());text(bx+19+i*56,117,bn[i],i==2?accent_color():text_color(),1);}
+    char st[24];status_text(st,sizeof(st),browser_status);if(browser_status){text((int)width-92,118,st,good_color(),1);}
     if(!browser_loaded){text(52,180,boot_info->uefi_http_get?"READY TO FETCH HTTP/HTTPS CONTENT":"FIRMWARE HTTP BRIDGE UNAVAILABLE",text_color(),2);text(52,216,"TYPE A DOMAIN SUCH AS HTTP://NEVERSL.COM/",sub_color(),1);text(52,246,"THE PAGE IS FETCHED BY THE UEFI NETWORK STACK.",sub_color(),1);}
     else{
         fill_rect(34,160,(int)width-310,(int)height-286,bg_color());text_clip(52,176,browser_title[0]?browser_title:"UNTITLED",accent_color(),2,(int)width-350);
@@ -689,7 +699,13 @@ static void app_click(uint32_t x,uint32_t y){
     if(current_app==APP_CALC){int bw=100,bh=46,g=10,cols=5,x0=38,y0=204;const char*keys[]={"7","8","9","/","4","5","6","*","1","2","3","-","0","(",")","+","C","=","."};for(int i=0;i<19;i++){int bx=x0+(i%cols)*(bw+g),by=y0+(i/cols)*(bh+g);if(hit(x,y,bx,by,bw,bh)){char c=keys[i][0];if(c=='C'){calc_len=0;calc_input[0]=0;calc_has_result=0;}else if(c=='=')calc_eval();else if(calc_len<CALC_MAX){calc_input[calc_len++]=c;calc_input[calc_len]=0;calc_has_result=0;}mark_dirty();return;}}}
     else if(current_app==APP_FILES){for(int row=0;row<10;row++){uint64_t i=(uint64_t)file_scroll+row;if(i>=boot_info->boot_file_count)break;if(hit(x,y,278,150+row*40,(int)width-316,32)){selected_file=(int)i;STEVEOS_BOOT_FILE*f=&boot_files[i];if(f->kind==1)current_app=APP_IMAGE;else if(f->kind==2&&f->data){if(boot_name_is_html(f))browser_load_local_file(f);else load_text_file(f);}mark_dirty();return;}}}
     else if(current_app==APP_SETTINGS){if(hit(x,y,42,136,(int)width-84,54))light_theme^=1;else if(hit(x,y,42,202,(int)width-84,54)){pointer_scale=pointer_scale>=4?1:pointer_scale+1;native_pointer_set_scale(pointer_scale);}else if(hit(x,y,42,308,(int)width-84,54)){accent_id=(uint8_t)((accent_id+1)&3u);}mark_dirty();}
-    else if(current_app==APP_BROWSER){if(hit(x,y,34,106,(int)width-68,40)){browser_focus=1;mark_dirty();}else{for(int i=0;i<browser_link_count;i++)if(hit(x,y,(int)width-270,204+i*42,220,32)){size_t n=0;while(browser_link_urls[i][n]&&n+1<BROWSER_URL_MAX)browser_url[n]=browser_link_urls[i][n],n++;browser_url[n]=0;browser_focus=0;browser_fetch();mark_dirty();return;}}}
+    else if(current_app==APP_BROWSER){
+        if(hit(x,y,34,106,(int)width-370,40)){browser_focus=1;mark_dirty();}
+        else if(hit(x,y,(int)width-326,106,50,40)){browser_focus=0;browser_history_move(-1);mark_dirty();}
+        else if(hit(x,y,(int)width-270,106,50,40)){browser_focus=0;browser_history_move(1);mark_dirty();}
+        else if(hit(x,y,(int)width-214,106,50,40)){browser_focus=0;if(browser_url[0])browser_fetch();mark_dirty();}
+        else{for(int i=0;i<browser_link_count;i++)if(hit(x,y,(int)width-270,204+i*42,220,32)){size_t n=0;while(browser_link_urls[i][n]&&n+1<BROWSER_URL_MAX)browser_url[n]=browser_link_urls[i][n],n++;browser_url[n]=0;browser_focus=0;browser_fetch();mark_dirty();return;}}
+    }
     else if(current_app==APP_DESKTOP){if(hit(x,y,0,(int)height-54,76,54)){menu_open^=1;mark_dirty();return;}int h=54;for(int i=0;i<6;i++)if(hit(x,y,84+i*72,(int)height-h,64,38)){launch_app((int[]){APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_TERMINAL,APP_SETTINGS}[i]);return;}int cw=250,ch=80,g=14,x0=28,y0=132,cols=width>=1200?4:3;for(int i=0;i<12;i++){int col=i%cols,row=i/cols,bx=x0+col*(cw+g),by=y0+row*(ch+g);if(hit(x,y,bx,by,cw,ch)){launch_app((int[]){APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_IMAGE,APP_SETTINGS,APP_TASKS,APP_TERMINAL,APP_CALENDAR,APP_CONTROL,APP_ABOUT,APP_SYSINFO}[i]);return;}}}
     else if(current_app==APP_ABOUT||current_app==APP_CONTROL||current_app==APP_TASKS||current_app==APP_EDITOR||current_app==APP_TERMINAL||current_app==APP_IMAGE||current_app==APP_CALENDAR||current_app==APP_SYSINFO){if(hit(x,y,(int)width-62,66,30,24)){current_app=APP_DESKTOP;mark_dirty();return;}if(y>(uint32_t)height-54&&x<76){current_app=APP_DESKTOP;menu_open=1;mark_dirty();return;}}
 }
