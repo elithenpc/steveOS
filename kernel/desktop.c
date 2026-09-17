@@ -604,35 +604,140 @@ static void resolve_url(const char*href,char*out,size_t cap){
     out[(base+n<cap)?base+n:cap-1]=0;
 }
 static void parse_browser_html(void){
-            if(ci_eq(name,"img")&&!closing&&!browser_image_url[0]){
-                const char*sp=find_ci(tag,"src");
-                if(sp&&sp<browser_raw+j){sp+=3;while(*sp==' '||*sp=='=')sp++;if(*sp=='"'||*sp=='\\'')sp++;resolve_url(sp,browser_image_url,sizeof(browser_image_url));}
-                const char*ap=find_ci(tag,"alt");
-                if(ap&&ap<browser_raw+j){ap+=3;while(*ap==' '||*ap=='=')ap++;if(*ap=='"'||*ap=='\\'')ap++;size_t an=0;while(ap[an]&&ap[an]!='"'&&ap[an]!='\\''&&ap[an]!=' '&&an+1<sizeof(browser_image_alt)){browser_image_alt[an]=ap[an];an++;}browser_image_alt[an]=0;}
-            }
-
-    browser_text[0]=0;browser_title[0]=0;browser_link_count=0;size_t tl=0,i=0;int skip=0,in_a=0;size_t link_len=0;
+    browser_text[0]=0;
+    browser_title[0]=0;
+    browser_link_count=0;
+    browser_image_url[0]=0;
+    browser_image_alt[0]=0;
+    size_t tl=0,i=0;
+    int skip=0,in_a=0;
+    size_t link_len=0;
     while(i<(size_t)BROWSER_RAW_MAX&&browser_raw[i]){
         if(browser_raw[i]=='<'){
-            size_t j=i+1;while(browser_raw[j]&&browser_raw[j]!='>'&&j-i<300)j++;if(!browser_raw[j])break;
-            const char*tag=browser_raw+i+1;while(*tag==' '||*tag=='/'){tag++;}char name[16];size_t tn=0;while(tag[tn]&&tag[tn]!=' '&&tag[tn]!='>'&&tag[tn]!='/'&&tn+1<sizeof(name)){char c=tag[tn];if(c>='A'&&c<='Z')c=(char)(c-'A'+'a');name[tn++]=c;}name[tn]=0;
+            size_t j=i+1;
+            while(browser_raw[j]&&browser_raw[j]!='>'&&j-i<300)j++;
+            if(!browser_raw[j])break;
+            const char*tag=browser_raw+i+1;
+            while(*tag==' '||*tag=='/')tag++;
+            char name[16];
+            size_t tn=0;
+            while(tag[tn]&&tag[tn]!=' '&&tag[tn]!='>'&&tag[tn]!='/'&&tn+1<sizeof(name)){
+                char ch=tag[tn];
+                if(ch>='A'&&ch<='Z')ch=(char)(ch-'A'+'a');
+                name[tn++]=ch;
+            }
+            name[tn]=0;
             int closing=(browser_raw[i+1]=='/');
-            if(ci_eq(name,"script")||ci_eq(name,"style")){if(!closing)skip=1;else skip=0;}
+            if(ci_eq(name,"script")||ci_eq(name,"style"))skip=closing?0:1;
             if(ci_eq(name,"title")&&!closing){
-                const char*q=browser_raw+j+1;const char*end=find_ci(q,"</title>");if(end){size_t nn=0;while(q<end&&nn+1<sizeof(browser_title)){if(*q!='\n'&&*q!='\r')browser_title[nn++]=*q;q++;}browser_title[nn]=0;}
+                const char*q=browser_raw+j+1;
+                const char*end=find_ci(q,"</title>");
+                if(end){
+                    size_t nn=0;
+                    while(q<end&&nn+1<sizeof(browser_title)){
+                        if(*q!='\\n'&&*q!='\\r')browser_title[nn++]=*q;
+                        q++;
+                    }
+                    browser_title[nn]=0;
+                }
+            }
+            if(ci_eq(name,"img")&&!closing&&!browser_image_url[0]){
+                const char*sp=find_ci(tag,"src");
+                if(sp&&sp<browser_raw+j){
+                    sp+=3;
+                    while(*sp==' '||*sp=='=')sp++;
+                    if(*sp=='"'||*sp==39)sp++;
+                    resolve_url(sp,browser_image_url,sizeof(browser_image_url));
+                }
+                const char*ap=find_ci(tag,"alt");
+                if(ap&&ap<browser_raw+j){
+                    ap+=3;
+                    while(*ap==' '||*ap=='=')ap++;
+                    if(*ap=='"'||*ap==39)ap++;
+                    size_t an=0;
+                    while(ap[an]&&ap[an]!='"'&&ap[an]!=39&&ap[an]!=' '&&ap[an]!='>'&&an+1<sizeof(browser_image_alt)){
+                        browser_image_alt[an]=ap[an];
+                        an++;
+                    }
+                    browser_image_alt[an]=0;
+                }
             }
             if(ci_eq(name,"a")&&!closing&&browser_link_count<BROWSER_LINKS){
-                const char*hp=find_ci(tag,"href");if(hp&&hp<browser_raw+j){hp+=5;while(*hp==' '||*hp=='=')hp++;if(*hp=='\"'||*hp=='\'')hp++;char u[BROWSER_LINK_MAX+1];resolve_url(hp,u,sizeof(u));if(u[0]){for(size_t k=0;k<sizeof(browser_link_urls[0])-1&&u[k];k++)browser_link_urls[browser_link_count][k]=u[k],browser_link_urls[browser_link_count][k+1]=0;in_a=1;link_len=0;browser_link_text[browser_link_count][0]=0;}}}
-            if(ci_eq(name,"a")&&closing){if(in_a){in_a=0;if(browser_link_count<BROWSER_LINKS){if(!browser_link_text[browser_link_count][0]){browser_link_text[browser_link_count][0]='L';browser_link_text[browser_link_count][1]='I';browser_link_text[browser_link_count][2]='N';browser_link_text[browser_link_count][3]='K';browser_link_text[browser_link_count][4]=0;}browser_link_count++;}link_len=0;}}
-            if(!skip&&(ci_eq(name,"br")||ci_eq(name,"p")||ci_eq(name,"div")||ci_eq(name,"li")||ci_eq(name,"h1")||ci_eq(name,"h2")||ci_eq(name,"tr")||ci_eq(name,"hr")))append_text(browser_text,&tl,BROWSER_TEXT_MAX,'\n');
-            i=j+1;continue;
+                const char*hp=find_ci(tag,"href");
+                if(hp&&hp<browser_raw+j){
+                    hp+=4;
+                    while(*hp==' '||*hp=='=')hp++;
+                    if(*hp=='"'||*hp==39)hp++;
+                    char u[BROWSER_LINK_MAX+1];
+                    resolve_url(hp,u,sizeof(u));
+                    if(u[0]){
+                        for(size_t k=0;k<BROWSER_URL_MAX&&u[k]&&k+1<BROWSER_URL_MAX;k++)
+                            browser_link_urls[browser_link_count][k]=u[k],browser_link_urls[browser_link_count][k+1]=0;
+                        in_a=1;
+                        link_len=0;
+                        browser_link_text[browser_link_count][0]=0;
+                    }
+                }
+            }
+            if(ci_eq(name,"a")&&closing){
+                if(in_a){
+                    in_a=0;
+                    if(browser_link_count<BROWSER_LINKS){
+                        if(!browser_link_text[browser_link_count][0]){
+                            browser_link_text[browser_link_count][0]='L';
+                            browser_link_text[browser_link_count][1]='I';
+                            browser_link_text[browser_link_count][2]='N';
+                            browser_link_text[browser_link_count][3]='K';
+                            browser_link_text[browser_link_count][4]=0;
+                        }
+                        browser_link_count++;
+                    }
+                    link_len=0;
+                }
+            }
+            if(!skip&&(ci_eq(name,"br")||ci_eq(name,"p")||ci_eq(name,"div")||ci_eq(name,"li")||ci_eq(name,"h1")||ci_eq(name,"h2")||ci_eq(name,"tr")||ci_eq(name,"hr")))
+                append_text(browser_text,&tl,BROWSER_TEXT_MAX,'\\n');
+            i=j+1;
+            continue;
         }
         if(skip){i++;continue;}
-        if(browser_raw[i]=='&'){size_t j=i+1;while(browser_raw[j]&&browser_raw[j]!=';'&&j-i<12)j++;if(browser_raw[j]==';'){entity_char(browser_raw+i+1,j-i,browser_text,&tl);if(in_a&&browser_link_count<BROWSER_LINKS&&link_len+1<47)browser_link_text[browser_link_count][link_len++]=browser_text[tl-1],browser_link_text[browser_link_count][link_len]=0;i=j+1;continue;}}
-        char c=browser_raw[i++];if(c=='\r')continue;if(c=='\n'){append_text(browser_text,&tl,BROWSER_TEXT_MAX,' ');if(in_a&&browser_link_count<BROWSER_LINKS&&link_len+1<47)browser_link_text[browser_link_count][link_len++]=' ';continue;}if(tl&&browser_text[tl-1]==' '&&c==' ')continue;append_text(browser_text,&tl,BROWSER_TEXT_MAX,c);if(in_a&&browser_link_count<BROWSER_LINKS&&link_len+1<47){browser_link_text[browser_link_count][link_len++]=c;browser_link_text[browser_link_count][link_len]=0;}
+        if(browser_raw[i]=='&'){
+            size_t j=i+1;
+            while(browser_raw[j]&&browser_raw[j]!=';'&&j-i<12)j++;
+            if(browser_raw[j]==';'){
+                size_t before=tl;
+                entity_char(browser_raw+i+1,j-i,browser_text,&tl);
+                if(in_a&&browser_link_count<BROWSER_LINKS&&tl>before&&link_len+1<47){
+                    browser_link_text[browser_link_count][link_len++]=browser_text[tl-1];
+                    browser_link_text[browser_link_count][link_len]=0;
+                }
+                i=j+1;
+                continue;
+            }
+        }
+        char ch=browser_raw[i++];
+        if(ch=='\\r')continue;
+        if(ch=='\\n'){
+            append_text(browser_text,&tl,BROWSER_TEXT_MAX,' ');
+            if(in_a&&browser_link_count<BROWSER_LINKS&&link_len+1<47)browser_link_text[browser_link_count][link_len++]=' ';
+            continue;
+        }
+        if(tl&&browser_text[tl-1]==' '&&ch==' ')continue;
+        append_text(browser_text,&tl,BROWSER_TEXT_MAX,ch);
+        if(in_a&&browser_link_count<BROWSER_LINKS&&link_len+1<47){
+            browser_link_text[browser_link_count][link_len++]=ch;
+            browser_link_text[browser_link_count][link_len]=0;
+        }
     }
-    if(!browser_title[0]){size_t n=0;for(size_t k=0;browser_text[k]&&n+1<sizeof(browser_title)&&k<120;k++){if(browser_text[k]!='\n'&&browser_text[k]!='\r'){browser_title[n++]=browser_text[k];}}browser_title[n]=0;}
+    if(!browser_title[0]){
+        size_t n=0;
+        for(size_t k=0;browser_text[k]&&n+1<sizeof(browser_title)&&k<120;k++){
+            if(browser_text[k]!='\\n'&&browser_text[k]!='\\r')browser_title[n++]=browser_text[k];
+        }
+        browser_title[n]=0;
+    }
 }
+
 static void browser_copy_url(char*out,const char*in){size_t n=0;while(in[n]&&n+1<BROWSER_URL_MAX){out[n]=in[n];n++;}out[n]=0;}
 static void browser_history_visit(void){
     if(browser_history_lock){browser_history_lock=0;return;}
