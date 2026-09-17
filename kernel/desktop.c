@@ -86,6 +86,11 @@ static uint8_t ctrl_down,alt_down;
 static uint8_t shift_down;
 static uint8_t dirty=1;
 
+static void browser_copy_url(char*out,const char*in);
+static void browser_load_local_file(const STEVEOS_BOOT_FILE*f);
+static int browser_fetch(void);
+static void terminal_add(const char*s);
+
 static const GUID note_guid={0x53544556,0x4F53,0x4E56,0x00010001};
 static const GUID settings_guid={0x53544556,0x4F53,0x4E56,0x00010002};
 static const GUID bookmarks_guid={0x53544556,0x4F53,0x4E56,0x00010003};
@@ -211,7 +216,7 @@ static void load_bookmarks(void){
     browser_bookmark_count=0;
     for(int i=0;i<8;i++)browser_bookmarks[i][0]=0;
     if(!boot_info->uefi_get_variable)return;
-    struct {uint32_t magic;uint8_t count;uint8_t pad[3];char url[8][BROWSER_URL_MAX+1];} data={{0}};
+    struct {uint32_t magic;uint8_t count;uint8_t pad[3];char url[8][BROWSER_URL_MAX+1];} data={0};
     GETVAR get=(GETVAR)(uintptr_t)boot_info->uefi_get_variable;uint32_t a=0;uint64_t z=sizeof(data);
     if(get((uint16_t*)bookmarks_name,(GUID*)&bookmarks_guid,&a,&z,&data)==0&&data.magic==0x53545642u){
         browser_bookmark_count=data.count>8?8:data.count;
@@ -360,7 +365,6 @@ static void draw_desktop(void){
     if(menu_open)draw_start_menu();
 }
 
-static void calc_skip(void){while(calc_input[calc_len]==' ')calc_len++;}
 static int64_t parse_expr(const char**ps,int*ok);
 static int64_t parse_factor(const char**ps,int*ok){
     const char*p=*ps;while(*p==' ')p++;
@@ -497,7 +501,6 @@ static void draw_image(void){
     text(40,(int)height-98,"ESC BACK TO FILES",sub_color(),1);taskbar();
 }
 
-static char hexch(uint8_t v){return v<10?(char)('0'+v):(char)('A'+v-10);}
 static void status_text(char*out,size_t cap,uint32_t status){
     if(!out||cap<2){return;}
     if(!status){out[0]=0;return;}
@@ -515,7 +518,9 @@ static void entity_char(const char*p,size_t n,char*out,size_t*len){
     else append_text(out,len,BROWSER_TEXT_MAX,'&');
 }
 static void resolve_url(const char*href,char*out,size_t cap){
-    if(!cap)return;out[0]=0;if(!href)return;
+    if(!cap)return;
+    out[0]=0;
+    if(!href)return;
     while(*href==' '||*href=='\t'||*href=='\n')href++;
     size_t n=0;while(href[n]&&href[n]!='\"'&&href[n]!='\''&&href[n]!=' '&&href[n]!='\t'&&n+1<cap)n++;
     if(!n||href[0]=='#'||begins_ci(href,"javascript:")||begins_ci(href,"mailto:"))return;
@@ -529,8 +534,8 @@ static void resolve_url(const char*href,char*out,size_t cap){
     while(browser_url[authority]&&browser_url[authority]!='/'&&authority+1<BROWSER_URL_MAX)authority++;
     if(href[0]=='/'&&href[1]=='/'){
         const char*proto=(prefix>=3&&browser_url[4]=='s')?"https:":"http:";
-        size_t p=0;while(proto[p]&&p+1<cap)out[p]=proto[p++];
-        for(size_t i=0;i<n&&p+1<cap;i++)out[p+i]=href[i];
+        size_t p=0;while(proto[p]&&p+1<cap){out[p]=proto[p];p++;}
+        for(size_t i=0;i<n&&p+1<cap;i++){out[p+i]=href[i];}
         p+=n;out[p<cap?p:cap-1]=0;return;
     }
     if(href[0]=='/'){
@@ -659,7 +664,11 @@ static void terminal_exec(void){
     else if(str_eq(terminal_input,"BROWSE")){current_app=APP_BROWSER;browser_focus=1;mark_dirty();}
     else if(begins_ci(terminal_input,"BROWSE ")){size_t i=7;while(terminal_input[i]==' ')i++;size_t n=0;browser_url[0]=0;if(!begins_ci(terminal_input+i,"http://")&&!begins_ci(terminal_input+i,"https://")){const char*p="http://";while(*p)browser_url[n++]=*p++;}while(terminal_input[i]&&n+1<BROWSER_URL_MAX)browser_url[n++]=terminal_input[i++];browser_url[n]=0;current_app=APP_BROWSER;browser_focus=0;browser_fetch();mark_dirty();}
     else if(str_eq(terminal_input,"REFRESH")){if(current_app==APP_BROWSER&&browser_url[0])browser_fetch();else mark_dirty();}
-    else if(str_eq(terminal_input,"CLEAR"))terminal_count=0;else if(str_eq(terminal_input,"REBOOT"))native_reboot();else if(str_eq(terminal_input,"HALT"))native_halt();else if(terminal_len)terminal_add("UNKNOWN COMMAND");terminal_len=0;terminal_input[0]=0;
+    else if(str_eq(terminal_input,"CLEAR"))terminal_count=0;
+    else if(str_eq(terminal_input,"REBOOT"))native_reboot();
+    else if(str_eq(terminal_input,"HALT"))native_halt();
+    else if(terminal_len)terminal_add("UNKNOWN COMMAND");
+    terminal_len=0;terminal_input[0]=0;
 }
 static void draw_terminal(void){window_bar("TERMINAL","NATIVE SHELL  TYPE HELP");for(int i=0;i<TERM_LINES;i++)text(42,116+i*21,terminal_lines[i],text_color(),1);fill_rect(38,(int)height-150,(int)width-76,34,panel2_color());text(48,(int)height-141,">",accent_color(),1);text(62,(int)height-141,terminal_input,text_color(),1);text(40,(int)height-98,"ENTER RUNS COMMAND  BACKSPACE EDITS",sub_color(),1);taskbar();}
 
