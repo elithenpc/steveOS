@@ -90,6 +90,7 @@ typedef struct {
 typedef EFI_STATUS (EFIAPI *STEVEOS_HTTP_CONFIGURE)(VOID *This, STEVEOS_HTTP_CONFIG_DATA *ConfigData);
 typedef EFI_STATUS (EFIAPI *STEVEOS_HTTP_REQUEST)(VOID *This, STEVEOS_HTTP_TOKEN *Token);
 typedef EFI_STATUS (EFIAPI *STEVEOS_HTTP_RESPONSE)(VOID *This, STEVEOS_HTTP_TOKEN *Token);
+typedef EFI_STATUS (EFIAPI *STEVEOS_HTTP_POLL)(VOID *This);
 
 typedef struct {
     VOID *GetModeData;
@@ -97,7 +98,7 @@ typedef struct {
     STEVEOS_HTTP_REQUEST Request;
     VOID *Cancel;
     STEVEOS_HTTP_RESPONSE Response;
-    VOID *Poll;
+    STEVEOS_HTTP_POLL Poll;
 } STEVEOS_HTTP_PROTOCOL;
 
 static volatile BOOLEAN request_done;
@@ -203,8 +204,15 @@ EFI_STATUS steveos_http_get(const CHAR16 *url,
     if (EFI_ERROR(st))
         goto cleanup;
 
-    while (!request_done)
+    for (UINTN waited = 0; !request_done && waited < 10000; ++waited) {
+        if (http->Poll)
+            uefi_call_wrapper(http->Poll, 1, http);
         uefi_call_wrapper(BS->Stall, 1, 1000);
+    }
+    if (!request_done) {
+        st = EFI_TIMEOUT;
+        goto cleanup;
+    }
     if (EFI_ERROR(req_token.Status)) {
         st = req_token.Status;
         goto cleanup;
@@ -234,8 +242,15 @@ EFI_STATUS steveos_http_get(const CHAR16 *url,
     if (EFI_ERROR(st))
         goto cleanup;
 
-    while (!response_done)
+    for (UINTN waited = 0; !response_done && waited < 10000; ++waited) {
+        if (http->Poll)
+            uefi_call_wrapper(http->Poll, 1, http);
         uefi_call_wrapper(BS->Stall, 1, 1000);
+    }
+    if (!response_done) {
+        st = EFI_TIMEOUT;
+        goto cleanup;
+    }
     st = resp_token.Status;
     if (http_status)
         *http_status = resp_data.StatusCode;
