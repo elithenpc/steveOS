@@ -26,7 +26,7 @@ build/boot.raw: blehhh.png tools/image_to_raw.py
 build/mint_icons.raw: third_party/mint-y-icons/usr/share/icons/Mint-Y/apps/48/browser.png \
 	third_party/mint-y-icons/usr/share/icons/Mint-Y/apps/48/accessories-calculator.png \
 	third_party/mint-y-icons/usr/share/icons/Mint-Y/apps/48/accessories-text-editor.png \
-	third_party/mint-y-icons/usr/share/icons/Mint-Y/apps/48/folder.png \
+	third_party/mint-y-icons/usr/share/icons/Mint-Y/places/48/folder.png \
 	third_party/mint-y-icons/usr/share/icons/Mint-Y/apps/48/Terminal.png \
 	third_party/mint-y-icons/usr/share/icons/Mint-Y/apps/48/gnome-system-monitor.png \
 	third_party/mint-y-icons/usr/share/icons/Mint-Y/apps/48/cinnamon-preferences-color.png \
