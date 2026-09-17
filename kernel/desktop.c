@@ -25,6 +25,7 @@ typedef uint64_t (__attribute__((ms_abi)) *GETVAR)(uint16_t*,GUID*,uint32_t*,uin
 typedef uint64_t (__attribute__((ms_abi)) *SETVAR)(uint16_t*,GUID*,uint32_t,uint64_t,void*);
 typedef uint64_t (__attribute__((ms_abi)) *GETTIME)(void*,void*);
 typedef uint64_t (__attribute__((ms_abi)) *HTTPGET)(const uint16_t*,char*,uint64_t,uint64_t*,uint32_t*);
+typedef uint64_t (__attribute__((ms_abi)) *WRITEFILE)(const uint16_t*,const void*,uint64_t);
 typedef struct { uint32_t magic; uint8_t light; uint8_t scale; uint8_t accent; uint8_t reserved0; uint16_t reserved; } SETTINGS;
 
 typedef struct {
@@ -845,7 +846,7 @@ static void app_click(uint32_t x,uint32_t y){
     }
     if(y>=(uint32_t)height-54){
         if(x>(uint32_t)width-90u){power_menu^=1;menu_open=0;mark_dirty();return;}
-        if(x<76u){current_app=APP_DESKTOP;menu_open=1;mark_dirty();return;}current_app=APP_DESKTOP;menu_open=1;mark_dirty();return;}
+        if(x<76u){current_app=APP_DESKTOP;menu_open=1;mark_dirty();return;}
         if(x>=84u&&x<516u&&((x-84u)%72u)<64u){int slot=(int)((x-84u)/72u);launch_app((int[]){APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_TERMINAL,APP_SETTINGS}[slot]);return;}
     }
     if(current_app!=APP_DESKTOP&&hit(x,y,(int)width-62,66,30,24)){current_app=APP_DESKTOP;menu_open=0;mark_dirty();return;}
