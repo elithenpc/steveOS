@@ -13,6 +13,8 @@ typedef void (*STEVEOS_NATIVE_ENTRY)(STEVEOS_BOOT_INFO *boot, void *stack_top);
 #define STEVEOS_TEXT_LOAD_LIMIT (256ULL * 1024ULL)
 #define EFI_FILE_DIRECTORY 0x10ULL
 
+static EFI_HANDLE steveos_boot_device;
+
 typedef struct {
     uint16_t name[STEVEOS_BOOT_FILE_NAME_MAX];
     uint64_t size;
@@ -217,8 +219,6 @@ static EFI_STATUS snapshot_boot_files(EFI_HANDLE image_handle, STEVEOS_BOOT_INFO
     uefi_call_wrapper(root->Close,1,root);
     return EFI_SUCCESS;
 }
-
-static EFI_HANDLE steveos_boot_device;
 
 EFI_STATUS steveos_write_boot_text(const CHAR16 *path,const void *data,UINTN size){
     if(!path||!data)return EFI_INVALID_PARAMETER;
