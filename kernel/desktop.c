@@ -67,6 +67,7 @@ static char terminal_lines[TERM_LINES][64];
 static uint8_t terminal_count;
 static char browser_url[BROWSER_URL_MAX+1]="http://neverssl.com/";
 static char browser_raw[BROWSER_RAW_MAX];
+static size_t browser_raw_len;
 static char browser_text[BROWSER_TEXT_MAX];
 static char browser_title[96];
 static char browser_link_urls[BROWSER_LINKS][BROWSER_LINK_MAX+1];
@@ -457,6 +458,7 @@ static void browser_load_local_file(const STEVEOS_BOOT_FILE*f){
     const uint8_t*d=(const uint8_t*)(uintptr_t)f->data;
     for(size_t i=0;i<n;i++)browser_raw[i]=(char)d[i];
     browser_raw[n]=0;
+    browser_raw_len=n;
     parse_browser_html();
     char path[96];file_name(f,path,sizeof(path));
     const char*prefix="file:///";
@@ -617,7 +619,7 @@ static int browser_fetch(void){
     uint64_t st=get(u16,browser_raw,BROWSER_RAW_MAX-1,&len,&browser_status);
     if(st!=0||!len){browser_loaded=0;return 0;}
     if(len>=BROWSER_RAW_MAX)len=BROWSER_RAW_MAX-1;
-    browser_raw[len]=0;parse_browser_html();browser_loaded=1;browser_scroll=0;
+    browser_raw[len]=0;browser_raw_len=(size_t)len;parse_browser_html();browser_loaded=1;browser_scroll=0;
     browser_copy_url(browser_tabs[browser_current_tab],browser_url);
     browser_history_visit();
     return 1;
@@ -649,7 +651,7 @@ static void browser_close_tab(void){
 static void browser_save_page(void){
     if(!browser_loaded||!browser_raw[0]||!boot_info->uefi_write_text)return;
     WRITEFILE write=(WRITEFILE)(uintptr_t)boot_info->uefi_write_text;
-    write((const uint16_t*)page_file_name,browser_raw,(uint64_t)BROWSER_RAW_MAX);
+    write((const uint16_t*)page_file_name,browser_raw,(uint64_t)browser_raw_len);
     terminal_add("PAGE SAVED AS STEVEOSPAGE.HTM");
 }
 
