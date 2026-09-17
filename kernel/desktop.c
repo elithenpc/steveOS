@@ -357,6 +357,37 @@ static void draw_editor(void){
     text(40,(int)height-98,"ARROWS MOVE  BACKSPACE DELETE  ENTER NEWLINE  F5 SAVE",sub_color(),1);taskbar();
 }
 
+static int boot_name_is_html(const STEVEOS_BOOT_FILE*f){
+    if(!f)return 0;
+    char n[96];file_name(f,n,sizeof(n));
+    size_t z=0;while(n[z])z++;
+    if(z>=5&&n[z-5]=='.'&&
+       ((n[z-4]=='h'||n[z-4]=='H'))&&
+       ((n[z-3]=='t'||n[z-3]=='T'))&&
+       ((n[z-2]=='m'||n[z-2]=='M'))&&
+       ((n[z-1]=='l'||n[z-1]=='L')))return 1;
+    if(z>=4&&n[z-4]=='.'&&
+       ((n[z-3]=='h'||n[z-3]=='H'))&&
+       ((n[z-2]=='t'||n[z-2]=='T'))&&
+       ((n[z-1]=='m'||n[z-1]=='M')))return 1;
+    return 0;
+}
+static void browser_load_local_file(const STEVEOS_BOOT_FILE*f){
+    if(!f||!f->data||!f->size)return;
+    size_t n=(size_t)f->size;
+    if(n>=BROWSER_RAW_MAX)n=BROWSER_RAW_MAX-1;
+    const uint8_t*d=(const uint8_t*)(uintptr_t)f->data;
+    for(size_t i=0;i<n;i++)browser_raw[i]=(char)d[i];
+    browser_raw[n]=0;
+    parse_browser_html();
+    char path[96];file_name(f,path,sizeof(path));
+    const char*prefix="file:///";
+    size_t p=0;while(prefix[p]&&p+1<BROWSER_URL_MAX){browser_url[p]=prefix[p];p++;}
+    for(size_t i=0;path[i]&&p+1<BROWSER_URL_MAX;i++)browser_url[p++]=path[i];
+    browser_url[p]=0;
+    browser_status=200;browser_loaded=1;browser_focus=0;browser_scroll=0;current_app=APP_BROWSER;mark_dirty();
+}
+
 static void draw_files(void){
     window_bar("FILE MANAGER","BOOT VOLUME SNAPSHOT");
     fill_rect(38,110,220,(int)height-214,panel2_color());
@@ -541,7 +572,7 @@ static void app_click(uint32_t x,uint32_t y){
     }
     if(current_app!=APP_DESKTOP&&hit(x,y,(int)width-62,66,30,24)){current_app=APP_DESKTOP;menu_open=0;mark_dirty();return;}
     if(current_app==APP_CALC){int bw=100,bh=46,g=10,cols=5,x0=38,y0=204;const char*keys[]={"7","8","9","/","4","5","6","*","1","2","3","-","0","(",")","+","C","=","."};for(int i=0;i<19;i++){int bx=x0+(i%cols)*(bw+g),by=y0+(i/cols)*(bh+g);if(hit(x,y,bx,by,bw,bh)){char c=keys[i][0];if(c=='C'){calc_len=0;calc_input[0]=0;calc_has_result=0;}else if(c=='=')calc_eval();else if(calc_len<CALC_MAX){calc_input[calc_len++]=c;calc_input[calc_len]=0;calc_has_result=0;}mark_dirty();return;}}}
-    else if(current_app==APP_FILES){for(int row=0;row<10;row++){uint64_t i=(uint64_t)file_scroll+row;if(i>=boot_info->boot_file_count)break;if(hit(x,y,278,150+row*40,(int)width-316,32)){selected_file=(int)i;STEVEOS_BOOT_FILE*f=&boot_files[i];if(f->kind==1)current_app=APP_IMAGE;else if(f->kind==2&&f->data)load_text_file(f);mark_dirty();return;}}}
+    else if(current_app==APP_FILES){for(int row=0;row<10;row++){uint64_t i=(uint64_t)file_scroll+row;if(i>=boot_info->boot_file_count)break;if(hit(x,y,278,150+row*40,(int)width-316,32)){selected_file=(int)i;STEVEOS_BOOT_FILE*f=&boot_files[i];if(f->kind==1)current_app=APP_IMAGE;else if(f->kind==2&&f->data){if(boot_name_is_html(f))browser_load_local_file(f);else load_text_file(f);}mark_dirty();return;}}}
     else if(current_app==APP_SETTINGS){if(hit(x,y,42,136,(int)width-84,54))light_theme^=1;else if(hit(x,y,42,202,(int)width-84,54)){pointer_scale=pointer_scale>=4?1:pointer_scale+1;native_pointer_set_scale(pointer_scale);mark_dirty();}}
     else if(current_app==APP_BROWSER){if(hit(x,y,34,106,(int)width-68,40)){browser_focus=1;mark_dirty();}else{for(int i=0;i<browser_link_count;i++)if(hit(x,y,(int)width-270,204+i*42,220,32)){size_t n=0;while(browser_link_urls[i][n]&&n+1<BROWSER_URL_MAX)browser_url[n]=browser_link_urls[i][n],n++;browser_url[n]=0;browser_focus=0;browser_fetch();mark_dirty();return;}}}
     else if(current_app==APP_DESKTOP){if(hit(x,y,0,(int)height-54,76,54)){menu_open^=1;mark_dirty();return;}int h=54;for(int i=0;i<6;i++)if(hit(x,y,84+i*72,(int)height-h,64,38)){launch_app((int[]){APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_TERMINAL,APP_SETTINGS}[i]);return;}int cw=250,ch=80,g=14,x0=28,y0=132,cols=width>=1200?4:3;for(int i=0;i<12;i++){int col=i%cols,row=i/cols,bx=x0+col*(cw+g),by=y0+row*(ch+g);if(hit(x,y,bx,by,cw,ch)){if(i==11)menu_open=1;else launch_app((int[]){APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_IMAGE,APP_SETTINGS,APP_TASKS,APP_TERMINAL,APP_CALENDAR,APP_CONTROL,APP_ABOUT,APP_DESKTOP}[i]);return;}}}
