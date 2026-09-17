@@ -340,7 +340,7 @@ static void draw_start_menu(void){
     for(int i=0;i<11;i++){
         int row=i%6,col=i/6,bx=x+18+col*196,by=y+70+row*55;
         fill_rect(bx,by,180,45,(current_app==ap[i])?panel2_color():bg_color());
-        static const int icon_map[]={0,1,2,3,4,5,6,7,7,7,7,6};draw_icon(bx+5,by-4,icon_map[i]);text(bx+66,by+12,names[i],text_color(),1);
+        static const int icon_map[]={0,1,2,3,7,6,5,4,7,7,7,6};draw_icon(bx+5,by-4,icon_map[i]);text(bx+66,by+12,names[i],text_color(),1);
     }
     fill_rect(x+18,y+mh-80,mw-36,32,panel2_color());text(x+30,y+mh-70,"F1 WEB   F2 CALC   F3 NOTE   F4 FILES",sub_color(),1);
 }
@@ -356,7 +356,7 @@ static void draw_desktop(void){
         int col=i%cols,row=i/cols,x=x0+col*(cw+g),y=y0+row*(ch+g);
         if(x+cw>(int)width-20)continue;
         fill_rect(x+3,y+4,cw,ch,0x05080Bu);fill_rect(x,y,cw,ch,panel_color());
-        static const int desktop_icon_map[]={0,1,2,3,7,6,5,4,7,6,2,6};draw_icon(x+14,y+14,desktop_icon_map[i]);text(x+82,y+21,names[i],text_color(),1);
+        static const int desktop_icon_map[]={0,1,2,3,11,6,5,4,7,13,15,14};draw_icon(x+14,y+14,desktop_icon_map[i]);text(x+82,y+21,names[i],text_color(),1);
         text(x+82,y+43,i==0?"REAL HTTP FIRMWARE BRIDGE":i==1?"INTEGER EXPRESSION ENGINE":i==2?"NVRAM TEXT EDITOR":i==3?"BOOT VOLUME EXPLORER":i==4?"BMP + BOOT IMAGE":i==5?"THEME + INPUT":i==6?"LIVE SYSTEM STATUS":i==7?"NATIVE COMMAND SHELL":i==8?"SYSTEM DATE + TIME":i==9?"HARDWARE CONTROL CENTER":i==10?"LICENSES + BUILD INFO":"ALL APPS",sub_color(),1);
         if(ap[i]>=0)fill_rect(x+cw-24,y+17,7,7,(current_app==ap[i])?accent_color():panel2_color());
     }
@@ -474,7 +474,7 @@ static void draw_files(void){
     fill_rect(38,110,220,(int)height-214,panel2_color());
     text(56,128,"PLACES / FILTERS",sub_color(),1);
     const char*places[]={"All Items","Boot Volume","Text Files","Images","Directories","Other Files"};
-    for(int i=0;i<6;i++){fill_rect(50,150+i*42,190,34,(i==file_filter)?accent_dark():panel_color());text(66,161+i*42,places[i],i==file_filter?0xFFFFFFu:text_color(),1);}
+    for(int i=0;i<6;i++){fill_rect(50,150+i*42,190,34,(i==file_filter)?accent_dark():panel_color());draw_icon(54,141+i*42,i==0?3:i==1?3:i==2?9:i==3?11:i==4?3:15);text(112,161+i*42,places[i],i==file_filter?0xFFFFFFu:text_color(),1);}
     text(284,128,"NAME",sub_color(),1);text((int)width-240,128,"SIZE",sub_color(),1);
     int total=filtered_count(),shown=0;
     for(int row=0;row<10;row++){
