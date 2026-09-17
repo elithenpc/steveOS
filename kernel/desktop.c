@@ -501,6 +501,24 @@ static int visible_file_at(int visible,uint64_t*out){
     }
     return 0;
 }
+static int selected_visible_index(void){
+    if(selected_file<0)return -1;
+    int n=0;
+    for(uint64_t i=0;i<boot_info->boot_file_count;i++)if(file_matches(&boot_files[i])){
+        if((int)i==selected_file)return n;
+        n++;
+    }
+    return -1;
+}
+static void move_file_selection(int delta){
+    int total=filtered_count();
+    if(total<=0){selected_file=-1;file_scroll=0;return;}
+    int cur=selected_visible_index();if(cur<0)cur=delta>0?0:total-1;else cur+=delta;
+    if(cur<0)cur=0;if(cur>=total)cur=total-1;
+    uint64_t idx=0;if(visible_file_at(cur,&idx))selected_file=(int)idx;
+    if(cur<file_scroll)file_scroll=cur;
+    if(cur>=file_scroll+10)file_scroll=cur-9;
+}
 static void draw_files(void){
     window_bar("FILE MANAGER",file_filter_name());
     fill_rect(38,110,220,(int)height-214,panel2_color());
@@ -982,8 +1000,8 @@ static void handle_scan(uint8_t s){
     if(current_app==APP_CONTROL){if(s>=2&&s<=9){const int targets[]={APP_SETTINGS,APP_SETTINGS,APP_BROWSER,APP_FILES,APP_TASKS,APP_SYSINFO,APP_FILES,APP_ABOUT};launch_app(targets[s-2]);return;}mark_dirty();return;}
     if(current_app==APP_FILES){
         if(s>=2&&s<=7){file_filter=(int)(s-2);file_scroll=0;selected_file=-1;}
-        else if(s==0x48&&file_scroll>0)file_scroll--;
-        else if(s==0x50&&file_scroll+10<filtered_count())file_scroll++;
+        else if(s==0x48||s==0x4B)move_file_selection(-1);
+        else if(s==0x50||s==0x4D)move_file_selection(1);
         else if(s==0x1C&&selected_file>=0){STEVEOS_BOOT_FILE*f=&boot_files[selected_file];if(file_matches(f)){if(f->kind==1)current_app=APP_IMAGE;else if(f->kind==2&&f->data){if(boot_name_is_html(f))browser_load_local_file(f);else load_text_file(f);}}}
         mark_dirty();return;
     }
