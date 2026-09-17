@@ -9,14 +9,14 @@ ROOT = Path("third_party/mint-y-icons/usr/share/icons/Mint-Y")
 OUT = Path("build/mint_icons.raw")
 
 ICONS = [
-    ("apps/48/browser.png", "WEB"),
-    ("apps/48/accessories-calculator.png", "CALC"),
-    ("apps/48/accessories-text-editor.png", "NOTE"),
-    ("places/48/folder.png", "FILES"),
-    ("apps/48/Terminal.png", "TERM"),
-    ("apps/48/gnome-system-monitor.png", "TASK"),
-    ("apps/48/cinnamon-preferences-color.png", "SET"),
-    ("apps/48/calendar.png", "DATE"),
+    ("apps/64/browser.png", "WEB"),
+    ("apps/64/accessories-calculator.png", "CALC"),
+    ("apps/64/accessories-text-editor.png", "NOTE"),
+    ("places/64/folder.png", "FILES"),
+    ("apps/64/Terminal.png", "TERM"),
+    ("apps/64/gnome-system-monitor.png", "TASK"),
+    ("apps/64/cinnamon-preferences-color.png", "SET"),
+    ("apps/64/calendar.png", "DATE"),
 ]
 
 def main() -> None:
