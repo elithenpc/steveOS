@@ -17,7 +17,7 @@
 enum {
     APP_DESKTOP, APP_BROWSER, APP_CALC, APP_EDITOR, APP_FILES, APP_IMAGE,
     APP_SETTINGS, APP_TASKS, APP_TERMINAL, APP_CALENDAR, APP_CONTROL,
-    APP_ABOUT, APP_SYSINFO
+    APP_ABOUT, APP_SYSINFO, APP_DEVICES
 };
 
 typedef struct { uint32_t a,b,c,d; } GUID;
@@ -53,6 +53,9 @@ static uint32_t *framebuffer,*backbuffer;
 static uint32_t width,height,stride;
 static uint64_t total_memory,largest_region;
 static int current_app=APP_DESKTOP,previous_app=APP_DESKTOP;
+static uint8_t pci_device_count;
+typedef struct {uint8_t bus,dev,fn,class_code,subclass;uint16_t vendor,device;} PCI_VIEW;
+static PCI_VIEW pci_devices[24];
 static int selected_file=-1,file_scroll,file_filter;
 static uint8_t previous_buttons,light_theme,pointer_scale=1,accent_id,note_dirty;
 static uint8_t menu_open,power_menu,menu_search_len;
@@ -377,11 +380,11 @@ static int contains_ci(const char*a,const char*b){
     }
     return 0;
 }
-static const char*menu_names[]={"Web Browser","Calculator","Text Editor","File Manager","Image Viewer","Settings","Task Manager","Terminal","Calendar","Control Center","About SteveOS","System Information"};
-static const int menu_apps[]={APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_IMAGE,APP_SETTINGS,APP_TASKS,APP_TERMINAL,APP_CALENDAR,APP_CONTROL,APP_ABOUT,APP_SYSINFO};
+static const char*menu_names[]={"Web Browser","Calculator","Text Editor","File Manager","Image Viewer","Settings","Task Manager","Terminal","Calendar","Control Center","About SteveOS","System Information","Device Manager"};
+static const int menu_apps[]={APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_IMAGE,APP_SETTINGS,APP_TASKS,APP_TERMINAL,APP_CALENDAR,APP_CONTROL,APP_ABOUT,APP_SYSINFO,APP_DEVICES};
 static int menu_filtered_app(int visible){
     int n=0;
-    for(int i=0;i<12;i++)if(contains_ci(menu_names[i],menu_search)){if(n==visible)return menu_apps[i];n++;}
+    for(int i=0;i<13;i++)if(contains_ci(menu_names[i],menu_search)){if(n==visible)return menu_apps[i];n++;}
     return APP_DESKTOP;
 }
 static void draw_start_menu(void){
@@ -392,10 +395,10 @@ static void draw_start_menu(void){
     fill_rect(x+18,y+60,mw-36,30,panel2_color());
     text(x+30,y+70,menu_search[0]?menu_search:"SEARCH APPLICATIONS",menu_search[0]?text_color():sub_color(),1);
     int shown=0;
-    for(int i=0;i<12;i++)if(contains_ci(menu_names[i],menu_search)){
-        int row=shown%6,col=shown/6,bx=x+18+col*196,by=y+98+row*55;
+    for(int i=0;i<13;i++)if(contains_ci(menu_names[i],menu_search)){
+        int row=shown%7,col=shown/7,bx=x+18+col*196,by=y+98+row*55;
         fill_rect(bx,by,180,45,(current_app==menu_apps[i])?panel2_color():bg_color());
-        static const int icon_map[]={0,1,2,3,7,6,5,4,7,7,7,6};draw_icon(bx+5,by-4,icon_map[i]);
+        static const int icon_map[]={0,1,2,3,7,6,5,4,7,7,7,6,15};draw_icon(bx+5,by-4,icon_map[i]);
         text(bx+66,by+12,menu_names[i],text_color(),1);
         shown++;
     }
@@ -414,7 +417,7 @@ static void draw_desktop(void){
         int col=i%cols,row=i/cols,x=x0+col*(cw+g),y=y0+row*(ch+g);
         if(x+cw>(int)width-20)continue;
         fill_rect(x+3,y+4,cw,ch,0x05080Bu);fill_rect(x,y,cw,ch,panel_color());
-        static const int desktop_icon_map[]={0,1,2,3,11,6,5,4,7,13,15,14};draw_icon(x+14,y+14,desktop_icon_map[i]);text(x+82,y+21,names[i],text_color(),1);
+        static const int desktop_icon_map[]={0,1,2,3,11,6,5,4,7,13,15,14,15};draw_icon(x+14,y+14,desktop_icon_map[i]);text(x+82,y+21,names[i],text_color(),1);
         text(x+82,y+43,i==0?"REAL HTTP FIRMWARE BRIDGE":i==1?"INTEGER EXPRESSION ENGINE":i==2?"NVRAM TEXT EDITOR":i==3?"BOOT VOLUME EXPLORER":i==4?"BMP + BOOT IMAGE":i==5?"THEME + INPUT":i==6?"LIVE SYSTEM STATUS":i==7?"NATIVE COMMAND SHELL":i==8?"SYSTEM DATE + TIME":i==9?"HARDWARE CONTROL CENTER":i==10?"LICENSES + BUILD INFO":"ALL APPS",sub_color(),1);
         if(ap[i]>=0)fill_rect(x+cw-24,y+17,7,7,(current_app==ap[i])?accent_color():panel2_color());
     }
@@ -992,6 +995,44 @@ static void draw_control(void){
 static void cpuid_native(uint32_t leaf,uint32_t sub,uint32_t*a,uint32_t*b,uint32_t*c,uint32_t*d){
     __asm__ __volatile__("cpuid":"=a"(*a),"=b"(*b),"=c"(*c),"=d"(*d):"a"(leaf),"c"(sub));
 }
+static uint32_t desktop_pci_read32(uint8_t bus,uint8_t dev,uint8_t fn,uint8_t reg){
+    uint32_t address=0x80000000u|((uint32_t)bus<<16)|((uint32_t)dev<<11)|((uint32_t)fn<<8)|(reg&0xFCu);
+    __asm__ __volatile__("outl %0,%1"::"a"(address),"Nd"((uint16_t)0xCF8));
+    uint32_t v;
+    __asm__ __volatile__("inl %1,%0":"=a"(v):"Nd"((uint16_t)0xCFC));
+    return v;
+}
+static void scan_pci_devices(void){
+    pci_device_count=0;
+    for(uint32_t bus=0;bus<256&&pci_device_count<24;bus++)
+        for(uint32_t dev=0;dev<32&&pci_device_count<24;dev++)
+            for(uint32_t fn=0;fn<8&&pci_device_count<24;fn++){
+                uint32_t id=desktop_pci_read32((uint8_t)bus,(uint8_t)dev,(uint8_t)fn,0);
+                if((uint16_t)id==0xFFFFu)continue;
+                uint32_t cls=desktop_pci_read32((uint8_t)bus,(uint8_t)dev,(uint8_t)fn,8);
+                PCI_VIEW*d=&pci_devices[pci_device_count++];
+                d->bus=(uint8_t)bus;d->dev=(uint8_t)dev;d->fn=(uint8_t)fn;
+                d->vendor=(uint16_t)id;d->device=(uint16_t)(id>>16);
+                d->class_code=(uint8_t)(cls>>24);d->subclass=(uint8_t)(cls>>16);
+            }
+}
+static void draw_devices(void){
+    window_bar("DEVICE MANAGER","PCI HARDWARE ENUMERATION");
+    text(42,116,"BUS",sub_color(),1);text(98,116,"DEVICE",sub_color(),1);text(190,116,"FUNCTION",sub_color(),1);text(290,116,"VENDOR",sub_color(),1);text(390,116,"DEVICE ID",sub_color(),1);text(500,116,"CLASS",sub_color(),1);
+    for(int i=0;i<pci_device_count;i++){
+        int y=132+i*30;
+        fill_rect(40,y,(int)width-80,24,(i&1)?panel_color():bg_color());
+        u64_text(52,y+7,pci_devices[i].bus,text_color(),1);
+        u64_text(102,y+7,pci_devices[i].dev,text_color(),1);
+        u64_text(194,y+7,pci_devices[i].fn,text_color(),1);
+        u64_text(294,y+7,pci_devices[i].vendor,text_color(),1);
+        u64_text(394,y+7,pci_devices[i].device,text_color(),1);
+        u64_text(504,y+7,pci_devices[i].class_code,text_color(),1);
+        text(570,y+7,pci_devices[i].class_code==3?"DISPLAY":pci_devices[i].class_code==1?"STORAGE":pci_devices[i].class_code==2?"NETWORK":pci_devices[i].class_code==12?"SERIAL":"DEVICE",sub_color(),1);
+    }
+    text(42,(int)height-122,"READ-ONLY PCI CONFIGURATION SPACE  •  FIRST 24 DEVICES",sub_color(),1);taskbar();
+}
+
 static void draw_sysinfo(void){
     window_bar("SYSTEM INFORMATION","NATIVE HARDWARE / FIRMWARE");
     uint32_t a=0,b=0,cpu_c=0,d=0;char vendor[13];
@@ -1052,7 +1093,7 @@ static void app_click(uint32_t x,uint32_t y){
     }
     else if(current_app==APP_SETTINGS){if(hit(x,y,42,136,(int)width-84,54))light_theme^=1;else if(hit(x,y,42,202,(int)width-84,54)){pointer_scale=pointer_scale>=4?1:pointer_scale+1;native_pointer_set_scale(pointer_scale);}else if(hit(x,y,42,308,(int)width-84,54)){accent_id=(uint8_t)((accent_id+1)&3u);}mark_dirty();}
     else if(current_app==APP_CONTROL){
-        for(int i=0;i<8;i++){int col=i%2,row=i/2,rx=42+col*300,ry=114+row*76;if(hit(x,y,rx,ry,280,60)){const int targets[]={APP_SETTINGS,APP_SETTINGS,APP_BROWSER,APP_FILES,APP_TASKS,APP_SYSINFO,APP_FILES,APP_ABOUT};launch_app(targets[i]);return;}}
+        for(int i=0;i<8;i++){int col=i%2,row=i/2,rx=42+col*300,ry=114+row*76;if(hit(x,y,rx,ry,280,60)){const int targets[]={APP_SETTINGS,APP_SETTINGS,APP_BROWSER,APP_FILES,APP_TASKS,APP_SYSINFO,APP_FILES,APP_DEVICES};launch_app(targets[i]);return;}}
     }
     else if(current_app==APP_BROWSER){
         for(int i=0;i<browser_tab_count;i++)if(hit(x,y,38+i*120,152,110,28)){browser_tab_switch(i);return;}
@@ -1062,16 +1103,16 @@ static void app_click(uint32_t x,uint32_t y){
         else if(hit(x,y,(int)width-214,106,50,40)){browser_focus=0;if(browser_url[0])browser_fetch();mark_dirty();}
         else{for(int i=0;i<browser_link_count;i++)if(hit(x,y,(int)width-270,228+i*42,220,32)){size_t n=0;while(browser_link_urls[i][n]&&n+1<BROWSER_URL_MAX)browser_url[n]=browser_link_urls[i][n],n++;browser_url[n]=0;browser_focus=0;browser_fetch();mark_dirty();return;}}
     }
-    else if(current_app==APP_DESKTOP){if(hit(x,y,0,(int)height-54,76,54)){menu_open^=1;if(menu_open){menu_search_len=0;menu_search[0]=0;}mark_dirty();return;}int h=54;for(int i=0;i<6;i++)if(hit(x,y,84+i*72,(int)height-h,64,38)){launch_app((int[]){APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_TERMINAL,APP_SETTINGS}[i]);return;}int cw=250,ch=80,g=14,x0=28,y0=132,cols=width>=1200?4:3;for(int i=0;i<12;i++){int col=i%cols,row=i/cols,bx=x0+col*(cw+g),by=y0+row*(ch+g);if(hit(x,y,bx,by,cw,ch)){launch_app((int[]){APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_IMAGE,APP_SETTINGS,APP_TASKS,APP_TERMINAL,APP_CALENDAR,APP_CONTROL,APP_ABOUT,APP_SYSINFO}[i]);return;}}}
-    else if(current_app==APP_ABOUT||current_app==APP_CONTROL||current_app==APP_TASKS||current_app==APP_EDITOR||current_app==APP_TERMINAL||current_app==APP_IMAGE||current_app==APP_CALENDAR||current_app==APP_SYSINFO){if(hit(x,y,(int)width-62,66,30,24)){current_app=APP_DESKTOP;mark_dirty();return;}if(y>(uint32_t)height-54&&x<76){current_app=APP_DESKTOP;menu_open=1;mark_dirty();return;}}
+    else if(current_app==APP_DESKTOP){if(hit(x,y,0,(int)height-54,76,54)){menu_open^=1;if(menu_open){menu_search_len=0;menu_search[0]=0;}mark_dirty();return;}int h=54;for(int i=0;i<6;i++)if(hit(x,y,84+i*72,(int)height-h,64,38)){launch_app((int[]){APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_TERMINAL,APP_SETTINGS}[i]);return;}int cw=250,ch=80,g=14,x0=28,y0=132,cols=width>=1200?4:3;for(int i=0;i<12;i++){int col=i%cols,row=i/cols,bx=x0+col*(cw+g),by=y0+row*(ch+g);if(hit(x,y,bx,by,cw,ch)){launch_app((int[]){APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_IMAGE,APP_SETTINGS,APP_TASKS,APP_TERMINAL,APP_CALENDAR,APP_CONTROL,APP_ABOUT,APP_SYSINFO,APP_DEVICES}[i]);return;}}}
+    else if(current_app==APP_ABOUT||current_app==APP_CONTROL||current_app==APP_TASKS||current_app==APP_EDITOR||current_app==APP_TERMINAL||current_app==APP_IMAGE||current_app==APP_CALENDAR||current_app==APP_SYSINFO||current_app==APP_DEVICES){if(hit(x,y,(int)width-62,66,30,24)){current_app=APP_DESKTOP;mark_dirty();return;}if(y>(uint32_t)height-54&&x<76){current_app=APP_DESKTOP;menu_open=1;mark_dirty();return;}}
 }
 static void menu_click(uint32_t x,uint32_t y){
     int mw=430,mh=(int)height-76,mx=12,my=(int)height-62-mh;
     if(!hit(x,y,mx,my,mw,mh)){menu_open=0;menu_search_len=0;menu_search[0]=0;mark_dirty();return;}
     if(hit(x,y,mx+18,my+60,mw-36,30)){return;}
     int shown=0;
-    for(int i=0;i<12;i++)if(contains_ci(menu_names[i],menu_search)){
-        int row=shown%6,col=shown/6,bx=mx+18+col*196,by=my+98+row*55;
+    for(int i=0;i<13;i++)if(contains_ci(menu_names[i],menu_search)){
+        int row=shown%7,col=shown/7,bx=mx+18+col*196,by=my+98+row*55;
         if(hit(x,y,bx,by,180,45)){launch_app(menu_apps[i]);return;}
         shown++;
     }
@@ -1158,7 +1199,7 @@ static void handle_scan(uint8_t s){
     if(s==0x38&&current_app==APP_BROWSER){browser_focus=1;mark_dirty();return;}
     if(menu_open){menu_key(s);return;}
     if(current_app==APP_EDITOR){note_key(s);return;}if(current_app==APP_BROWSER){browser_key(s);return;}if(current_app==APP_CALC){calc_key(s);return;}if(current_app==APP_TERMINAL){terminal_key(s);return;}
-    if(current_app==APP_CONTROL){if(s>=2&&s<=9){const int targets[]={APP_SETTINGS,APP_SETTINGS,APP_BROWSER,APP_FILES,APP_TASKS,APP_SYSINFO,APP_FILES,APP_ABOUT};launch_app(targets[s-2]);return;}mark_dirty();return;}
+    if(current_app==APP_CONTROL){if(s>=2&&s<=9){const int targets[]={APP_SETTINGS,APP_SETTINGS,APP_BROWSER,APP_FILES,APP_TASKS,APP_SYSINFO,APP_FILES,APP_DEVICES};launch_app(targets[s-2]);return;}mark_dirty();return;}
     if(current_app==APP_FILES){
         if(s>=2&&s<=7){file_filter=(int)(s-2);file_scroll=0;selected_file=-1;}
         else if(s==0x48||s==0x4B)move_file_selection(-1);
