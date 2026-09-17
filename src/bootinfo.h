@@ -33,9 +33,13 @@ typedef struct {
     uint64_t kernel_stack_top;
     uint64_t uefi_get_variable;
     uint64_t uefi_set_variable;
+    uint64_t uefi_get_time;
+    uint64_t uefi_http_get;
     uint64_t boot_files;
     uint64_t boot_file_count;
     uint64_t boot_device_handle;
+    uint64_t backbuffer_base;
+    uint64_t backbuffer_size;
 } STEVEOS_BOOT_INFO;
 
 #endif
