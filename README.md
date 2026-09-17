@@ -4,11 +4,10 @@ A growing x86-64 operating system project with a native framebuffer desktop, rea
 
 ## Current milestone: native desktop 0.9
 
-## Current milestone: 0.2
 
-steveOS boots as a UEFI application, selects a high-resolution GOP mode, runs a safe boot diagnostics screen, and launches a graphical desktop with mouse and keyboard input.
+steveOS boots through UEFI, selects a GOP graphics mode, prepares the native kernel environment, and launches the native framebuffer desktop while deliberately retaining the UEFI services needed by selected compatibility bridges.
 
-The native desktop now includes:
+The native desktop includes:
 
 - Mint-style application menu and panel/taskbar
 - Real Mint-Y application icons packed into the native kernel image
@@ -52,7 +51,7 @@ SteveOS desktop shell
     └── Web browser → UEFI HTTP services
 ```
 
-This is still a UEFI application rather than a native post-`ExitBootServices()` kernel. The kernel, interrupt controller, device drivers, TCP/IP stack, and a fully standards-compliant browser engine remain future work.
+SteveOS is currently a hybrid native environment. Its desktop and hardware input paths run in the native kernel, while UEFI Boot/Runtime Services remain available for filesystem snapshots, firmware time, NVRAM, and the HTTP bridge. Native storage, TCP/IP, TLS, process isolation, and a full browser engine remain future work.
 
 ## Testing
 
