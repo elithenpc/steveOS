@@ -379,11 +379,6 @@ static int contains_ci(const char*a,const char*b){
 }
 static const char*menu_names[]={"Web Browser","Calculator","Text Editor","File Manager","Image Viewer","Settings","Task Manager","Terminal","Calendar","Control Center","About SteveOS","System Information"};
 static const int menu_apps[]={APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_IMAGE,APP_SETTINGS,APP_TASKS,APP_TERMINAL,APP_CALENDAR,APP_CONTROL,APP_ABOUT,APP_SYSINFO};
-static int menu_filtered_count(void){
-    int n=0;
-    for(int i=0;i<12;i++)if(contains_ci(menu_names[i],menu_search))n++;
-    return n;
-}
 static int menu_filtered_app(int visible){
     int n=0;
     for(int i=0;i<12;i++)if(contains_ci(menu_names[i],menu_search)){if(n==visible)return menu_apps[i];n++;}
