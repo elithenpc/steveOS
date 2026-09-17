@@ -25,7 +25,7 @@ typedef uint64_t (__attribute__((ms_abi)) *GETVAR)(uint16_t*,GUID*,uint32_t*,uin
 typedef uint64_t (__attribute__((ms_abi)) *SETVAR)(uint16_t*,GUID*,uint32_t,uint64_t,void*);
 typedef uint64_t (__attribute__((ms_abi)) *GETTIME)(void*,void*);
 typedef uint64_t (__attribute__((ms_abi)) *HTTPGET)(const uint16_t*,char*,uint64_t,uint64_t*,uint32_t*);
-typedef struct { uint32_t magic; uint8_t light; uint8_t scale; uint16_t reserved; } SETTINGS;
+typedef struct { uint32_t magic; uint8_t light; uint8_t scale; uint8_t accent; uint8_t reserved0; uint16_t reserved; } SETTINGS;
 
 typedef struct {
     uint16_t year;
@@ -53,7 +53,7 @@ static uint32_t width,height,stride;
 static uint64_t total_memory,largest_region;
 static int current_app=APP_DESKTOP;
 static int selected_file=-1,file_scroll;
-static uint8_t previous_buttons,light_theme,pointer_scale=1,note_dirty;
+static uint8_t previous_buttons,light_theme,pointer_scale=1,accent_id,note_dirty;
 static uint8_t menu_open;
 static uint8_t note[NOTE_MAX+1];
 static size_t note_len,note_cursor;
@@ -106,8 +106,16 @@ static uint32_t panel_color(void){return light_theme?0xFFFFFFu:0x171E27u;}
 static uint32_t panel2_color(void){return light_theme?0xE2E8ECu:0x202A36u;}
 static uint32_t text_color(void){return light_theme?0x17202Au:0xF2F6F8u;}
 static uint32_t sub_color(void){return light_theme?0x5D6B75u:0xA5B2BCu;}
-static uint32_t accent_color(void){return light_theme?0x5FAF3Fu:0x8BCF4Fu;}
-static uint32_t accent_dark(void){return light_theme?0x4B8E31u:0x5A972Du;}
+static uint32_t accent_color(void){
+    static const uint32_t light[]={0x5FAF3Fu,0x3984D4u,0x8A63C7u,0xD8873Cu};
+    static const uint32_t dark[]={0x8BCF4Fu,0x68A7E8u,0xB18CE8u,0xF0A35Fu};
+    return (light_theme?light:dark)[accent_id&3u];
+}
+static uint32_t accent_dark(void){
+    static const uint32_t light[]={0x4B8E31u,0x2D69A9u,0x704BA7u,0xAD6828u};
+    static const uint32_t dark[]={0x5A972Du,0x3F79B2u,0x805AB3u,0xB9793Au};
+    return (light_theme?light:dark)[accent_id&3u];
+}
 static uint32_t danger_color(void){return light_theme?0xB64A4Au:0xE27F80u;}
 static uint32_t good_color(void){return light_theme?0x3E8A50u:0x88CF98u;}
 
@@ -148,7 +156,7 @@ static void glyph(int x,int y,char c,uint32_t col,int s){
     else if(c=='#'){fill_rect(x+s,y,s,s*8,col);fill_rect(x+3*s,y,s,s*8,col);fill_rect(x,y+2*s,5*s,s,col);fill_rect(x,y+5*s,5*s,s,col);}
     else if(c=='%'){fill_rect(x,y,s,s,col);fill_rect(x+4*s,y+6*s,s,s,col);for(int i=0;i<5;i++)fill_rect(x+(4-i)*s,y+i*s,s,s,col);}
 }
-static void text(int x,int y,const char*s,uint32_t col,int sc){while(*s){if(*s==' ')x+=6*sc;else{glyph(x,y,*s,col,sc);x+=6*sc;}}}
+static void text(int x,int y,const char*s,uint32_t col,int sc){while(*s){if(*s==' ')x+=6*sc;else{glyph(x,y,*s,col,sc);x+=6*sc;}s++;}}
 static void text_clip(int x,int y,const char*s,uint32_t col,int sc,int maxw){int n=0;while(*s&&n+6*sc<=maxw){if(*s==' ')x+=6*sc;else{glyph(x,y,*s,col,sc);x+=6*sc;}s++;n+=6*sc;}}
 static void u64_text(int x,int y,uint64_t v,uint32_t col,int sc){char b[32];int n=0;if(!v)b[n++]='0';while(v&&n<31){b[n++]=(char)('0'+v%10);v/=10;}while(n){glyph(x,y,b[--n],col,sc);x+=6*sc;}}
 static void s64_text(int x,int y,int64_t v,uint32_t col,int sc){if(v<0){glyph(x,y,'-',col,sc);x+=6*sc;u64_text(x,y,(uint64_t)(-v),col,sc);}else u64_text(x,y,(uint64_t)v,col,sc);}
@@ -183,13 +191,13 @@ static void load_settings(void){
     light_theme=0;pointer_scale=1;
     if(boot_info->uefi_get_variable){
         GETVAR get=(GETVAR)(uintptr_t)boot_info->uefi_get_variable;uint32_t a=0;uint64_t z=sizeof(SETTINGS);SETTINGS s={0};
-        if(get((uint16_t*)settings_name,(GUID*)&settings_guid,&a,&z,&s)==0&&s.magic==0x53545653u){light_theme=s.light?1:0;pointer_scale=s.scale<1?1:(s.scale>4?4:s.scale);}
+        if(get((uint16_t*)settings_name,(GUID*)&settings_guid,&a,&z,&s)==0&&s.magic==0x53545654u){light_theme=s.light?1:0;pointer_scale=s.scale<1?1:(s.scale>4?4:s.scale);accent_id=s.accent&3u;}
     }
     native_pointer_set_scale(pointer_scale);
 }
 static void save_settings(void){
     if(!boot_info->uefi_set_variable)return;
-    SETVAR set=(SETVAR)(uintptr_t)boot_info->uefi_set_variable;SETTINGS s={0x53545653u,light_theme,pointer_scale,0};set((uint16_t*)settings_name,(GUID*)&settings_guid,7,sizeof(s),&s);
+    SETVAR set=(SETVAR)(uintptr_t)boot_info->uefi_set_variable;SETTINGS s={0x53545654u,light_theme,pointer_scale,accent_id,0,0};set((uint16_t*)settings_name,(GUID*)&settings_guid,7,sizeof(s),&s);
 }
 static void load_note(void){
     note_len=note_cursor=0;note_dirty=0;
@@ -551,9 +559,10 @@ static void draw_settings(void){
     window_bar("SYSTEM SETTINGS","F5 SAVES SETTINGS");text(42,116,"PERSONALIZATION",accent_color(),1);
     fill_rect(42,136,(int)width-84,54,light_theme?panel2_color():panel_color());text(58,154,"THEME",text_color(),1);text((int)width-190,154,light_theme?"LIGHT":"DARK",accent_color(),1);
     fill_rect(42,202,(int)width-84,54,panel_color());text(58,220,"POINTER SCALE",text_color(),1);u64_text((int)width-190,220,pointer_scale,accent_color(),1);text(58,238,"1 TO 4",sub_color(),1);
-    text(42,290,"INPUT",accent_color(),1);fill_rect(42,308,(int)width-84,92,panel_color());text(58,326,native_usb_mouse_present()?"USB HID MOUSE ACTIVE":"USB HID MOUSE OFF",text_color(),1);text(58,348,native_i2c_hid_present()?"I2C HID TOUCHPAD ACTIVE":"I2C HID TOUCHPAD OFF",sub_color(),1);text(58,370,"NATIVE PS/2 KEYBOARD ACTIVE",sub_color(),1);
-    text(42,430,"NETWORK",accent_color(),1);fill_rect(42,448,(int)width-84,78,panel_color());text(58,466,boot_info->uefi_http_get?"UEFI HTTP SERVICE AVAILABLE":"UEFI HTTP SERVICE UNAVAILABLE",text_color(),1);text(58,488,"BROWSER USES FIRMWARE DNS + HTTP STACK",sub_color(),1);
-    text(42,(int)height-98,"CLICK THEME/POINTER ROWS  •  F5 SAVE TO NVRAM",sub_color(),1);taskbar();
+    text(42,290,"ACCENT",accent_color(),1);fill_rect(42,308,(int)width-84,54,panel_color());text(58,326,"ACCENT PRESET",text_color(),1);u64_text((int)width-190,326,(uint64_t)(accent_id+1),accent_color(),1);text((int)width-155,326,"1-4",sub_color(),1);
+    text(42,388,"INPUT",accent_color(),1);fill_rect(42,406,(int)width-84,92,panel_color());text(58,424,native_usb_mouse_present()?"USB HID MOUSE ACTIVE":"USB HID MOUSE OFF",text_color(),1);text(58,446,native_i2c_hid_present()?"I2C HID TOUCHPAD ACTIVE":"I2C HID TOUCHPAD OFF",sub_color(),1);text(58,468,"NATIVE PS/2 KEYBOARD ACTIVE",sub_color(),1);
+    text(42,520,"NETWORK",accent_color(),1);fill_rect(42,538,(int)width-84,78,panel_color());text(58,466,boot_info->uefi_http_get?"UEFI HTTP SERVICE AVAILABLE":"UEFI HTTP SERVICE UNAVAILABLE",text_color(),1);text(58,488,"BROWSER USES FIRMWARE DNS + HTTP STACK",sub_color(),1);
+    text(42,(int)height-98,"CLICK THEME/POINTER/ACCENT ROWS  •  F5 SAVE TO NVRAM",sub_color(),1);taskbar();
 }
 
 static void draw_calendar(void){
@@ -593,7 +602,7 @@ static void app_click(uint32_t x,uint32_t y){
     if(current_app!=APP_DESKTOP&&hit(x,y,(int)width-62,66,30,24)){current_app=APP_DESKTOP;menu_open=0;mark_dirty();return;}
     if(current_app==APP_CALC){int bw=100,bh=46,g=10,cols=5,x0=38,y0=204;const char*keys[]={"7","8","9","/","4","5","6","*","1","2","3","-","0","(",")","+","C","=","."};for(int i=0;i<19;i++){int bx=x0+(i%cols)*(bw+g),by=y0+(i/cols)*(bh+g);if(hit(x,y,bx,by,bw,bh)){char c=keys[i][0];if(c=='C'){calc_len=0;calc_input[0]=0;calc_has_result=0;}else if(c=='=')calc_eval();else if(calc_len<CALC_MAX){calc_input[calc_len++]=c;calc_input[calc_len]=0;calc_has_result=0;}mark_dirty();return;}}}
     else if(current_app==APP_FILES){for(int row=0;row<10;row++){uint64_t i=(uint64_t)file_scroll+row;if(i>=boot_info->boot_file_count)break;if(hit(x,y,278,150+row*40,(int)width-316,32)){selected_file=(int)i;STEVEOS_BOOT_FILE*f=&boot_files[i];if(f->kind==1)current_app=APP_IMAGE;else if(f->kind==2&&f->data){if(boot_name_is_html(f))browser_load_local_file(f);else load_text_file(f);}mark_dirty();return;}}}
-    else if(current_app==APP_SETTINGS){if(hit(x,y,42,136,(int)width-84,54))light_theme^=1;else if(hit(x,y,42,202,(int)width-84,54)){pointer_scale=pointer_scale>=4?1:pointer_scale+1;native_pointer_set_scale(pointer_scale);mark_dirty();}}
+    else if(current_app==APP_SETTINGS){if(hit(x,y,42,136,(int)width-84,54))light_theme^=1;else if(hit(x,y,42,202,(int)width-84,54)){pointer_scale=pointer_scale>=4?1:pointer_scale+1;native_pointer_set_scale(pointer_scale);}else if(hit(x,y,42,308,(int)width-84,54)){accent_id=(uint8_t)((accent_id+1)&3u);}mark_dirty();}
     else if(current_app==APP_BROWSER){if(hit(x,y,34,106,(int)width-68,40)){browser_focus=1;mark_dirty();}else{for(int i=0;i<browser_link_count;i++)if(hit(x,y,(int)width-270,204+i*42,220,32)){size_t n=0;while(browser_link_urls[i][n]&&n+1<BROWSER_URL_MAX)browser_url[n]=browser_link_urls[i][n],n++;browser_url[n]=0;browser_focus=0;browser_fetch();mark_dirty();return;}}}
     else if(current_app==APP_DESKTOP){if(hit(x,y,0,(int)height-54,76,54)){menu_open^=1;mark_dirty();return;}int h=54;for(int i=0;i<6;i++)if(hit(x,y,84+i*72,(int)height-h,64,38)){launch_app((int[]){APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_TERMINAL,APP_SETTINGS}[i]);return;}int cw=250,ch=80,g=14,x0=28,y0=132,cols=width>=1200?4:3;for(int i=0;i<12;i++){int col=i%cols,row=i/cols,bx=x0+col*(cw+g),by=y0+row*(ch+g);if(hit(x,y,bx,by,cw,ch)){if(i==11)menu_open=1;else launch_app((int[]){APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_IMAGE,APP_SETTINGS,APP_TASKS,APP_TERMINAL,APP_CALENDAR,APP_CONTROL,APP_ABOUT,APP_DESKTOP}[i]);return;}}}
     else if(current_app==APP_ABOUT||current_app==APP_CONTROL||current_app==APP_TASKS||current_app==APP_EDITOR||current_app==APP_TERMINAL||current_app==APP_IMAGE||current_app==APP_CALENDAR){if(hit(x,y,(int)width-62,66,30,24)){current_app=APP_DESKTOP;mark_dirty();return;}if(y>(uint32_t)height-54&&x<76){current_app=APP_DESKTOP;menu_open=1;mark_dirty();return;}}
@@ -652,7 +661,7 @@ static void handle_scan(uint8_t s){
     if(menu_open){if(current_app==APP_DESKTOP){}menu_open=0;return;}
     if(current_app==APP_EDITOR){note_key(s);return;}if(current_app==APP_BROWSER){browser_key(s);return;}if(current_app==APP_CALC){calc_key(s);return;}if(current_app==APP_TERMINAL){terminal_key(s);return;}
     if(current_app==APP_FILES){if(s==0x48&&file_scroll>0)file_scroll--;else if(s==0x50&&file_scroll+10<(int)boot_info->boot_file_count)file_scroll++;else if(s==0x1C&&selected_file>=0){STEVEOS_BOOT_FILE*f=&boot_files[selected_file];if(f->kind==1)current_app=APP_IMAGE;else if(f->kind==2&&f->data)load_text_file(f);}mark_dirty();return;}
-    if(current_app==APP_SETTINGS){if(s==0x4B&&pointer_scale>1)pointer_scale--;else if(s==0x4D&&pointer_scale<4)pointer_scale++;native_pointer_set_scale(pointer_scale);mark_dirty();return;}
+    if(current_app==APP_SETTINGS){if(s==0x4B&&pointer_scale>1)pointer_scale--;else if(s==0x4D&&pointer_scale<4)pointer_scale++;else if(s==0x48&&accent_id>0)accent_id--;else if(s==0x50)accent_id=(uint8_t)((accent_id+1)&3u);native_pointer_set_scale(pointer_scale);mark_dirty();return;}
     mark_dirty();
 }
 
