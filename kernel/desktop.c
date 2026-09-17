@@ -204,6 +204,9 @@ static void save_settings(void){
     if(!boot_info->uefi_set_variable)return;
     SETVAR set=(SETVAR)(uintptr_t)boot_info->uefi_set_variable;SETTINGS s={0x53545654u,light_theme,pointer_scale,accent_id,0,0};set((uint16_t*)settings_name,(GUID*)&settings_guid,7,sizeof(s),&s);
 }
+static void browser_copy_url(char*out,const char*in);
+static void terminal_add(const char*s);
+
 static void load_bookmarks(void){
     browser_bookmark_count=0;
     for(int i=0;i<8;i++)browser_bookmarks[i][0]=0;
@@ -578,7 +581,7 @@ static void draw_browser(void){
         int x=52,y=214,lines=0;const char*p=browser_text;int skip=browser_scroll;while(*p&&skip>0){if(*p=='\n')skip--;p++;}while(*p&&lines<((int)height-330)/16){int used=0;while(*p&&*p!='\n'&&used<((int)width-350)/6){glyph(x+used*6,y+lines*16,*p,text_color(),1);used++;p++;}while(*p&&*p!='\n')p++;if(*p=='\n')p++;lines++;}
         fill_rect((int)width-286,160,252,(int)height-286,panel2_color());text( (int)width-270,178,"LINKS",sub_color(),1);for(int i=0;i<browser_link_count;i++){int yy=204+i*42;fill_rect((int)width-270,yy,220,32,panel_color());char num[2]={(char)('1'+i),0};text((int)width-258,yy+10,num,accent_color(),1);text_clip((int)width-238,yy+10,browser_link_text[i],text_color(),1,178);}
     }
-    text(40,(int)height-98,"HTTP BROWSER  •  BACKSPACE ADDRESS  •  UP/DOWN SCROLL  •  LEFT/RIGHT BACK/FORWARD",sub_color(),1);taskbar();
+    text(40,(int)height-98,"HTTP BROWSER  •  CTRL+L ADDRESS  •  CTRL+D SAVE BOOKMARK  •  CTRL+B OPEN BOOKMARK",sub_color(),1);taskbar();
 }
 
 static void terminal_add(const char*s){if(terminal_count<TERM_LINES){size_t i=0;while(s[i]&&i<63){terminal_lines[terminal_count][i]=s[i];i++;}terminal_lines[terminal_count][i]=0;terminal_count++;}else{for(int r=1;r<TERM_LINES;r++)for(int c=0;c<64;c++)terminal_lines[r-1][c]=terminal_lines[r][c];size_t i=0;while(s[i]&&i<63){terminal_lines[TERM_LINES-1][i]=s[i];i++;}terminal_lines[TERM_LINES-1][i]=0;}}
