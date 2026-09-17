@@ -205,6 +205,9 @@ static void panel(void){
     text(18,13,"STEVEOS",text_color(),2);
     text(105,16,"SYSTEM",sub_color(),1);
     text((int)width-230,15,native_usb_mouse_present()?"USB":"INPUT",sub_color(),1);
+    EFI_TIME_STEV t={0};
+    GETTIME gt=(GETTIME)(uintptr_t)boot_info->uefi_get_time;
+    if(gt){gt(&t,NULL);char clk[6];clk[0]=(char)('0'+(t.hour/10));clk[1]=(char)('0'+t.hour%10);clk[2]=':';clk[3]=(char)('0'+(t.minute/10));clk[4]=(char)('0'+t.minute%10);clk[5]=0;text((int)width-72,15,clk,text_color(),1);}
 }
 static void taskbar(void){
     int h=54,y=(int)height-h;
@@ -384,19 +387,19 @@ static void parse_browser_html(void){
         if(browser_raw[i]=='<'){
             size_t j=i+1;while(browser_raw[j]&&browser_raw[j]!='>'&&j-i<300)j++;if(!browser_raw[j])break;
             const char*tag=browser_raw+i+1;while(*tag==' '||*tag=='/'){tag++;}char name[16];size_t tn=0;while(tag[tn]&&tag[tn]!=' '&&tag[tn]!='>'&&tag[tn]!='/'&&tn+1<sizeof(name)){char c=tag[tn];if(c>='A'&&c<='Z')c=(char)(c-'A'+'a');name[tn++]=c;}name[tn]=0;
-            if(ci_eq(name,"script")||ci_eq(name,"style")){if(tag>browser_raw+i+1&&tag[-1]=='/'){}else skip=1;}
-            if(ci_eq(name,"/script")||ci_eq(name,"/style"))skip=0;
-            if(ci_eq(name,"title")&&tag[0]!='/'){
+            int closing=(browser_raw[i+1]=='/');
+            if(ci_eq(name,"script")||ci_eq(name,"style")){if(!closing)skip=1;else skip=0;}
+            if(ci_eq(name,"title")&&!closing){
                 const char*q=browser_raw+j+1;const char*end=find_ci(q,"</title>");if(end){size_t nn=0;while(q<end&&nn+1<sizeof(browser_title)){if(*q!='\n'&&*q!='\r')browser_title[nn++]=*q;q++;}browser_title[nn]=0;}
             }
-            if(ci_eq(name,"a")&&tag[0]!='/'&&browser_link_count<BROWSER_LINKS){
+            if(ci_eq(name,"a")&&!closing&&browser_link_count<BROWSER_LINKS){
                 const char*hp=find_ci(tag,"href");if(hp&&hp<browser_raw+j){hp+=5;while(*hp==' '||*hp=='=')hp++;if(*hp=='\"'||*hp=='\'')hp++;char u[BROWSER_LINK_MAX+1];resolve_url(hp,u,sizeof(u));if(u[0]){for(size_t k=0;k<sizeof(browser_link_urls[0])-1&&u[k];k++)browser_link_urls[browser_link_count][k]=u[k],browser_link_urls[browser_link_count][k+1]=0;in_a=1;link_len=0;browser_link_text[browser_link_count][0]=0;}}}
-            if(ci_eq(name,"/a")){if(in_a){in_a=0;if(browser_link_count<BROWSER_LINKS){if(!browser_link_text[browser_link_count][0]){browser_link_text[browser_link_count][0]='L';browser_link_text[browser_link_count][1]='I';browser_link_text[browser_link_count][2]='N';browser_link_text[browser_link_count][3]='K';browser_link_text[browser_link_count][4]=0;}browser_link_count++;}link_len=0;}}
+            if(ci_eq(name,"a")&&closing){if(in_a){in_a=0;if(browser_link_count<BROWSER_LINKS){if(!browser_link_text[browser_link_count][0]){browser_link_text[browser_link_count][0]='L';browser_link_text[browser_link_count][1]='I';browser_link_text[browser_link_count][2]='N';browser_link_text[browser_link_count][3]='K';browser_link_text[browser_link_count][4]=0;}browser_link_count++;}link_len=0;}}
             if(!skip&&(ci_eq(name,"br")||ci_eq(name,"p")||ci_eq(name,"div")||ci_eq(name,"li")||ci_eq(name,"h1")||ci_eq(name,"h2")||ci_eq(name,"tr")||ci_eq(name,"hr")))append_text(browser_text,&tl,BROWSER_TEXT_MAX,'\n');
             i=j+1;continue;
         }
         if(skip){i++;continue;}
-        if(browser_raw[i]=='&'){size_t j=i+1;while(browser_raw[j]&&browser_raw[j]!=';'&&j-i<12)j++;if(browser_raw[j]==';'){entity_char(browser_raw+i+1,j-i,BROWSER_TEXT_MAX?browser_text:&browser_text[0],&tl);if(in_a&&browser_link_count<BROWSER_LINKS&&link_len+1<47)browser_link_text[browser_link_count][link_len++]=browser_text[tl-1],browser_link_text[browser_link_count][link_len]=0;i=j+1;continue;}}
+        if(browser_raw[i]=='&'){size_t j=i+1;while(browser_raw[j]&&browser_raw[j]!=';'&&j-i<12)j++;if(browser_raw[j]==';'){entity_char(browser_raw+i+1,j-i-1,browser_text,&tl);if(in_a&&browser_link_count<BROWSER_LINKS&&link_len+1<47)browser_link_text[browser_link_count][link_len++]=browser_text[tl-1],browser_link_text[browser_link_count][link_len]=0;i=j+1;continue;}}
         char c=browser_raw[i++];if(c=='\r')continue;if(c=='\n'){append_text(browser_text,&tl,BROWSER_TEXT_MAX,' ');if(in_a&&browser_link_count<BROWSER_LINKS&&link_len+1<47)browser_link_text[browser_link_count][link_len++]=' ';continue;}if(tl&&browser_text[tl-1]==' '&&c==' ')continue;append_text(browser_text,&tl,BROWSER_TEXT_MAX,c);if(in_a&&browser_link_count<BROWSER_LINKS&&link_len+1<47){browser_link_text[browser_link_count][link_len++]=c;browser_link_text[browser_link_count][link_len]=0;}
     }
     if(!browser_title[0]){size_t n=0;for(size_t k=0;browser_text[k]&&n+1<sizeof(browser_title)&&k<120;k++){if(browser_text[k]!='\n'&&browser_text[k]!='\r'){browser_title[n++]=browser_text[k];}}browser_title[n]=0;}
@@ -407,13 +410,14 @@ static int browser_fetch(void){
     uint64_t len=0;browser_raw[0]=0;browser_status=0;uint64_t st=get(u16,browser_raw,BROWSER_RAW_MAX-1,&len,&browser_status);if(st!=0||!len){browser_loaded=0;return 0;}if(len>=BROWSER_RAW_MAX)len=BROWSER_RAW_MAX-1;browser_raw[len]=0;parse_browser_html();browser_loaded=1;browser_scroll=0;return 1;
 }
 static void draw_browser(void){
-    window_bar("WEB BROWSER",browser_focus?"ADDRESS ACTIVE  ENTER LOAD  ESC HOME":"ENTER URL  1-8 FOLLOW LINKS");
-    fill_rect(34,106,(int)width-68,40,bg_color());stroke_rect(34,106,(int)width-68,40,browser_focus?accent_color():panel2_color());text(46,117,browser_url,text_color(),1);
+    window_bar("WEB BROWSER",browser_focus?"ADDRESS ACTIVE  ENTER LOAD  ESC HOME":"UP DOWN SCROLL  1-8 LINKS");
+    fill_rect(34,106,(int)width-68,40,bg_color());stroke_rect(34,106,(int)width-68,40,browser_focus?accent_color():panel2_color());
+    if(browser_url[0])text(46,117,browser_url,text_color(),1);else text(46,117,"TYPE URL THEN ENTER",sub_color(),1);
     char st[24];status_text(st,sizeof(st),browser_status);if(browser_status){text((int)width-100,118,st,good_color(),1);}
     if(!browser_loaded){text(52,180,boot_info->uefi_http_get?"READY TO FETCH HTTP/HTTPS CONTENT":"FIRMWARE HTTP BRIDGE UNAVAILABLE",text_color(),2);text(52,216,"TYPE A DOMAIN SUCH AS HTTP://NEVERSL.COM/",sub_color(),1);text(52,246,"THE PAGE IS FETCHED BY THE UEFI NETWORK STACK.",sub_color(),1);}
     else{
         fill_rect(34,160,(int)width-310,(int)height-286,bg_color());text_clip(52,176,browser_title[0]?browser_title:"UNTITLED",accent_color(),2,(int)width-350);
-        int x=52,y=214,lines=0;const char*p=browser_text;while(*p&&lines<((int)height-330)/16){if(browser_scroll>0){/* scroll is handled by skipping lines below */}int used=0;if(browser_scroll>0){/* skip */}while(*p&&*p!='\n'&&used<((int)width-350)/6){glyph(x+used*6,y+lines*16,*p,text_color(),1);used++;p++;}while(*p&&*p!='\n')p++;if(*p=='\n')p++;lines++;}
+        int x=52,y=214,lines=0;const char*p=browser_text;int skip=browser_scroll;while(*p&&skip>0){if(*p=='\n')skip--;p++;}while(*p&&lines<((int)height-330)/16){int used=0;while(*p&&*p!='\n'&&used<((int)width-350)/6){glyph(x+used*6,y+lines*16,*p,text_color(),1);used++;p++;}while(*p&&*p!='\n')p++;if(*p=='\n')p++;lines++;}
         fill_rect((int)width-286,160,252,(int)height-286,panel2_color());text( (int)width-270,178,"LINKS",sub_color(),1);for(int i=0;i<browser_link_count;i++){int yy=204+i*42;fill_rect((int)width-270,yy,220,32,panel_color());char num[2]={(char)('1'+i),0};text((int)width-258,yy+10,num,accent_color(),1);text_clip((int)width-238,yy+10,browser_link_text[i],text_color(),1,178);}
     }
     text(40,(int)height-98,"HTTP BROWSER  •  BACKSPACE EDITS ADDRESS  •  DIGITS 1-8 FOLLOW LINKS",sub_color(),1);taskbar();
@@ -471,8 +475,20 @@ static void draw_about(void){
     text(44,(int)height-98,"STEVEOS IS A FREESTANDING PROJECT, NOT A LINUX MINT DERIVATIVE",sub_color(),1);taskbar();
 }
 
-static void launch_app(int app){menu_open=0;if(app>=0)current_app=app;selected_file=-1;browser_focus=app==APP_BROWSER?1:0;mark_dirty();}
+static void launch_app(int app){
+    menu_open=0;
+    if(app>=0)current_app=app;
+    selected_file=-1;
+    browser_focus=app==APP_BROWSER?1:0;
+    if(app==APP_BROWSER){browser_url[0]=0;browser_loaded=0;browser_scroll=0;browser_status=0;browser_raw[0]=0;browser_text[0]=0;browser_title[0]=0;browser_link_count=0;}
+    mark_dirty();
+}
 static void app_click(uint32_t x,uint32_t y){
+    if(y>=(uint32_t)height-54){
+        if(x<76u){current_app=APP_DESKTOP;menu_open=1;mark_dirty();return;}
+        if(x>=84u&&x<516u&&((x-84u)%72u)<64u){int slot=(int)((x-84u)/72u);launch_app((int[]){APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_TERMINAL,APP_SETTINGS}[slot]);return;}
+    }
+    if(current_app!=APP_DESKTOP&&hit(x,y,(int)width-62,66,30,24)){current_app=APP_DESKTOP;menu_open=0;mark_dirty();return;}
     if(current_app==APP_CALC){int bw=100,bh=46,g=10,cols=5,x0=38,y0=204;const char*keys[]={"7","8","9","/","4","5","6","*","1","2","3","-","0","(",")","+","C","=","."};for(int i=0;i<19;i++){int bx=x0+(i%cols)*(bw+g),by=y0+(i/cols)*(bh+g);if(hit(x,y,bx,by,bw,bh)){char c=keys[i][0];if(c=='C'){calc_len=0;calc_input[0]=0;calc_has_result=0;}else if(c=='=')calc_eval();else if(calc_len<CALC_MAX){calc_input[calc_len++]=c;calc_input[calc_len]=0;calc_has_result=0;}mark_dirty();return;}}}
     else if(current_app==APP_FILES){for(int row=0;row<10;row++){uint64_t i=(uint64_t)file_scroll+row;if(i>=boot_info->boot_file_count)break;if(hit(x,y,278,150+row*40,(int)width-316,32)){selected_file=(int)i;STEVEOS_BOOT_FILE*f=&boot_files[i];if(f->kind==1)current_app=APP_IMAGE;else if(f->kind==2&&f->data)load_text_file(f);mark_dirty();return;}}}
     else if(current_app==APP_SETTINGS){if(hit(x,y,42,136,(int)width-84,54))light_theme^=1;else if(hit(x,y,42,202,(int)width-84,54)){pointer_scale=pointer_scale>=4?1:pointer_scale+1;native_pointer_set_scale(pointer_scale);mark_dirty();}}
@@ -487,12 +503,30 @@ static char key_char(uint8_t s){
 }
 static char shifted(char c){if(c>='a'&&c<='z')return(char)(c-'a'+'A');if(c>='0'&&c<='9'){const char*s=")!@#$%^&*(";return s[c-'0'];}if(c=='-')return'_';if(c=='=')return'+';if(c=='[')return'{';if(c==']')return'}';if(c==';')return':';if(c=='\'')return'"';if(c==',')return'<';if(c=='.')return'>';if(c=='/')return'?';if(c=='\\')return'|';return c;}
 static void browser_key(uint8_t s){
-    if(s==0x2A||s==0x36){shift_down=1;return;}if(s==0xAA||s==0xB6){shift_down=0;return;}
-    if(s==0x1C){if(browser_focus){if(browser_url[0])browser_fetch();browser_focus=0;}return;}
-    if(s==0x0E){if(browser_focus){size_t n=0;while(browser_url[n])n++;if(n){browser_url[n-1]=0;}}return;}
+    if(s==0x2A||s==0x36){shift_down=1;return;}
+    if(s==0xAA||s==0xB6){shift_down=0;return;}
+    if(s==0x1C){
+        if(browser_focus){
+            if(browser_url[0])browser_fetch();
+            else {const char*p="http://neverssl.com/";size_t n=0;while(p[n]&&n+1<BROWSER_URL_MAX){browser_url[n]=p[n];n++;}browser_url[n]=0;browser_fetch();}
+            browser_focus=0;
+        }
+        return;
+    }
+    if(s==0x0E){
+        if(browser_focus){size_t n=0;while(browser_url[n])n++;if(n)browser_url[n-1]=0;}
+        return;
+    }
+    if(s==0x48){if(!browser_focus&&browser_scroll>0)browser_scroll--;return;}
+    if(s==0x50){if(!browser_focus)browser_scroll++;return;}
+    if(s==0x47){if(!browser_focus)browser_scroll=0;return;}
     if(s==0x01){browser_focus=0;return;}
-    if(!browser_focus&&s>1&&s<10&&s-2<browser_link_count){int i=s-2;size_t n=0;while(browser_link_urls[i][n]&&n+1<BROWSER_URL_MAX)browser_url[n]=browser_link_urls[i][n],n++;browser_url[n]=0;browser_fetch();return;}
-    char c=key_char(s);if(browser_focus&&c&&browser_url[0]&&((c>='A'&&c<='Z')||(c>='a'&&c<='z')||(c>='0'&&c<='9')||c==':'||c=='/'||c=='.'||c=='-'||c=='_'||c=='?'||c=='&'||c=='=')){size_t n=0;while(browser_url[n])n++;if(n<BROWSER_URL_MAX){browser_url[n]=shift_down?shifted(c):c;browser_url[n+1]=0;}}
+    if(!browser_focus&&s>1&&s<10&&s-2<browser_link_count){int i=s-2;size_t n=0;while(browser_link_urls[i][n]&&n+1<BROWSER_URL_MAX){browser_url[n]=browser_link_urls[i][n];n++;}browser_url[n]=0;browser_fetch();return;}
+    char c=key_char(s);
+    if(browser_focus&&c&&((c>='A'&&c<='Z')||(c>='a'&&c<='z')||(c>='0'&&c<='9')||c==':'||c=='/'||c=='.'||c=='-'||c=='_'||c=='?'||c=='&'||c=='=')){
+        size_t n=0;while(browser_url[n])n++;
+        if(n<BROWSER_URL_MAX){browser_url[n]=shift_down?shifted(c):c;browser_url[n+1]=0;}
+    }
 }
 static void terminal_key(uint8_t s){if(s==0x2A||s==0x36){shift_down=1;return;}if(s==0xAA||s==0xB6){shift_down=0;return;}if(s==0x1C){terminal_exec();return;}if(s==0x0E){if(terminal_len)terminal_input[--terminal_len]=0;return;}char c=key_char(s);if(c&&terminal_len<TERM_MAX){terminal_input[terminal_len++]=shift_down?shifted(c):((c>='a'&&c<='z')?(char)(c-'a'+'A'):c);terminal_input[terminal_len]=0;}}
 static void calc_key(uint8_t s){
