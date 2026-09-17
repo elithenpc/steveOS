@@ -1,44 +1,59 @@
 # steveOS architecture roadmap
 
-## Current boot layer
+## Current native layer
 
-- UEFI x86_64 boot application
-- GOP framebuffer desktop
-- Keyboard and simple-pointer mouse input
-- Embedded RGBA image resources
-- Start menu and installer UI
-- UEFI HTTP networking
-- UEFI block-device discovery
-- UEFI Simple File System file access
-- EFI installer service
-- UEFI memory-map discovery
+- UEFI x86_64 boot and GOP graphics
+- Hybrid native kernel handoff with firmware runtime and boot services retained for explicit compatibility bridges
+- Identity-mapped x86-64 paging
+- Native keyboard input
+- PS/2 fallback mouse input
+- xHCI USB HID mouse input
+- Experimental HID-over-I2C touchpad input
+- Native framebuffer backbuffer renderer
+- Mint-Y icon resource pipeline
+- Traditional panel, application menu, launcher and window shell
+- Persistent NVRAM settings and notes
+- Recursive boot-volume snapshot and file viewer
+- Task manager, calendar, control center and terminal
+- Firmware-backed HTTP browser
 
-## Native kernel transition
+## Browser roadmap
 
-The current build deliberately keeps UEFI services underneath the first desktop so the OS remains bootable while the native kernel is developed.
+The current browser is a real network client, but intentionally lightweight. It can issue HTTP requests through the UEFI HTTP service, extract readable HTML text, decode a small set of entities, discover basic links, resolve common relative URLs, scroll, and navigate history.
 
-The next native layer is planned as:
+The major missing browser layers are a native network stack, TLS ownership, a richer HTML/CSS layout engine, image decoding, forms, downloads, cookies, caching, tabs, and JavaScript.
 
-1. physical memory manager
-2. x86_64 page tables and virtual memory
-3. IDT and interrupt handling
-4. PIT/APIC timer
-5. task scheduler
-6. keyboard and mouse drivers
-7. PCI enumeration
-8. storage drivers
-9. FAT32 filesystem
-10. network card and Wi-Fi drivers
-11. IPv4, ARP, UDP, TCP and DNS
-12. TLS
-13. window manager and compositor
-14. userspace process model
+## Native system roadmap
 
-## Internet
+1. Interrupt-safe firmware compatibility boundary
+2. Physical-page allocator and safer heap
+3. PCI device manager
+4. Native storage controller drivers
+5. FAT32 read/write filesystem
+6. Native network device drivers
+7. IPv4, ARP, UDP, TCP and DNS
+8. Native TLS
+9. Process and address-space isolation
+10. Scheduler and timers
+11. Window manager and real compositing
+12. Audio stack
+13. Power management and ACPI device/resource enumeration
+14. USB keyboard and broader HID support
+15. Application packaging and installation
+16. Shell scripting and richer terminal services
 
-A browser is intentionally **not** part of this milestone. Once SteveOS owns its network stack, the browser can be built as a normal userspace application using the same TCP/TLS/HTTP interfaces.
+## Desktop roadmap
 
-The eventual browser can start small with HTML, CSS, images and links before adding JavaScript.
+- Multi-window workspace management
+- Notifications and system tray
+- File operations and writable user directories
+- Search and application discovery
+- Text editor tabs and larger buffers
+- Image formats beyond BMP
+- More hardware information and diagnostics
+- Accessibility controls
+- Theme/accent editor
+- Boot splash and recovery tools
 
 ## Installation safety
 
