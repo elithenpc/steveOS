@@ -94,13 +94,20 @@ static int controller_start(uint64_t bar){
 
 static int find_hid_device(void){
     uint8_t raw[HID_DESC_LEN];
-    for(uint16_t a=0x08;a<=0x5F;a++){address=a;if(!i2c_read_register(1,raw,sizeof(raw)))continue;HID_DESC*h=(HID_DESC*)raw;
+    HID_DESC generic;
+    uint8_t generic_found=0;
+    for(uint16_t a=0x08;a<=0x5F;a++){
+        address=a;
+        if(!i2c_read_register(1,raw,sizeof(raw)))continue;
+        HID_DESC*h=(HID_DESC*)raw;
         if(h->hid_desc_len!=HID_DESC_LEN||h->bcd_version!=0x0100||!h->input_reg||!h->max_input_len||h->max_input_len>sizeof(input_buf)||!h->report_desc_reg||!h->report_desc_len)continue;
-        /* Prefer the Alps HID devices used by several Dell Latitude models,
-         * while retaining generic HID-over-I2C fallback support. */
-        if(h->vendor_id==0x044E && (h->product_id==0x121F || h->product_id==0x1212 || h->product_id==0x120A || h->product_id==0x120B || h->product_id==0x120C || h->product_id==0x120D || h->product_id==0x1216 || h->product_id==0x1217 || h->product_id==0x121E || h->product_id==0x1220)){hid=*h;max_input=h->max_input_len;device_ready=1;return 1;}
-        hid=*h;max_input=h->max_input_len;device_ready=1;return 1;
-    }return 0;
+        if(h->vendor_id==0x044E && (h->product_id==0x121F || h->product_id==0x1212 || h->product_id==0x120A || h->product_id==0x120B || h->product_id==0x120C || h->product_id==0x120D || h->product_id==0x1216 || h->product_id==0x1217 || h->product_id==0x121E || h->product_id==0x1220)){
+            hid=*h;max_input=h->max_input_len;device_ready=1;return 1;
+        }
+        if(!generic_found){generic=*h;generic_found=1;}
+    }
+    if(generic_found){hid=generic;max_input=generic.max_input_len;device_ready=1;return 1;}
+    return 0;
 }
 
 static uint32_t bits_get(const uint8_t*b,uint16_t bit,uint8_t size){uint32_t v=0;for(uint8_t i=0;i<size&&i<32;i++)v|=((uint32_t)((b[(bit+i)>>3]>>((bit+i)&7))&1u))<<i;return v;}
