@@ -91,11 +91,15 @@ build/native-kernel-input.o: kernel/input.c kernel/i2c.h
 	mkdir -p build
 	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
 
-build/native-kernel-main.o: kernel/main.c src/bootinfo.h build/boot.raw.o
+build/native-kernel-main.o: kernel/main.c kernel/desktop.h src/bootinfo.h build/boot.raw.o
 	mkdir -p build
 	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
 
-build/native_kernel.elf: build/native-kernel-entry.o build/native-kernel-main.o build/native-kernel-arch.o build/native-kernel-usb.o build/native-kernel-i2c.o build/native-kernel-input.o build/boot.raw.o
+build/native-kernel-desktop.o: kernel/desktop.c kernel/desktop.h src/bootinfo.h
+	mkdir -p build
+	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
+
+build/native_kernel.elf: build/native-kernel-entry.o build/native-kernel-main.o build/native-kernel-desktop.o build/native-kernel-arch.o build/native-kernel-usb.o build/native-kernel-i2c.o build/native-kernel-input.o build/boot.raw.o
 	$(LD) -T kernel/linker.ld -o $@ $^
 
 build/native_kernel.raw: build/native_kernel.elf
