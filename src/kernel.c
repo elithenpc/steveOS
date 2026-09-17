@@ -227,7 +227,14 @@ EFI_STATUS steveos_write_boot_text(const CHAR16 *path,const void *data,UINTN siz
     st=uefi_call_wrapper(fs->OpenVolume,2,fs,&root);if(EFI_ERROR(st)||!root)return st;
     st=uefi_call_wrapper(root->Open,5,root,&file,path,EFI_FILE_MODE_READ|EFI_FILE_MODE_WRITE|EFI_FILE_MODE_CREATE,0);
     if(!EFI_ERROR(st)&&file){
-        UINT64 pos=0;uefi_call_wrapper(file->SetPosition,2,file,pos);
+        EFI_FILE_INFO info;
+        ZeroMem(&info,sizeof(info));
+        info.Size=sizeof(info);
+        info.FileSize=0;
+        info.PhysicalSize=0;
+        uefi_call_wrapper(file->SetInfo,4,file,&gEfiFileInfoGuid,info.Size,&info);
+        UINT64 pos=0;
+        uefi_call_wrapper(file->SetPosition,2,file,pos);
         st=uefi_call_wrapper(file->Write,3,file,&size,(VOID*)data);
         uefi_call_wrapper(file->Close,1,file);
     }
