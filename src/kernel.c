@@ -7,13 +7,11 @@
 
 extern const unsigned char _binary_build_native_kernel_raw_start[];
 extern const unsigned char _binary_build_native_kernel_raw_end[];
+static EFI_HANDLE steveos_boot_device;
 typedef void (*STEVEOS_NATIVE_ENTRY)(STEVEOS_BOOT_INFO *boot, void *stack_top);
 #define STEVEOS_KERNEL_LOAD_ADDRESS 0x00200000ULL
 #define STEVEOS_IMAGE_LOAD_LIMIT (2ULL * 1024ULL * 1024ULL)
 #define STEVEOS_TEXT_LOAD_LIMIT (256ULL * 1024ULL)
-#define EFI_FILE_DIRECTORY 0x10ULL
-
-static EFI_HANDLE steveos_boot_device;
 
 typedef struct {
     uint16_t name[STEVEOS_BOOT_FILE_NAME_MAX];
