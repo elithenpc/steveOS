@@ -108,87 +108,112 @@ static UINT32 file_kind(const CHAR16 *name) {
     return 0;
 }
 
-static EFI_STATUS snapshot_boot_files(EFI_HANDLE image_handle, STEVEOS_BOOT_INFO *boot) {
-    EFI_LOADED_IMAGE_PROTOCOL *loaded = NULL;
-    EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *fs = NULL;
-    EFI_FILE_PROTOCOL *root = NULL;
-    EFI_STATUS st;
-    UINTN info_size;
-    VOID *buf = NULL;
-
-    if (!boot) return EFI_INVALID_PARAMETER;
-    st = uefi_call_wrapper(BS->HandleProtocol, 3, image_handle,
-                           &gEfiLoadedImageProtocolGuid, (VOID **)&loaded);
-    if (EFI_ERROR(st) || !loaded || !loaded->DeviceHandle) return st;
-    st = uefi_call_wrapper(BS->HandleProtocol, 3, loaded->DeviceHandle,
-                           &gEfiSimpleFileSystemProtocolGuid, (VOID **)&fs);
-    if (EFI_ERROR(st) || !fs) return st;
-    st = uefi_call_wrapper(fs->OpenVolume, 2, fs, &root);
-    if (EFI_ERROR(st) || !root) return st;
-
-    STEVEOS_BOOT_FILE_UEFI *files = AllocatePool(sizeof(*files) * STEVEOS_MAX_BOOT_FILES);
-    if (!files) {
-        uefi_call_wrapper(root->Close, 1, root);
-        return EFI_OUT_OF_RESOURCES;
-    }
-    ZeroMem(files, sizeof(*files) * STEVEOS_MAX_BOOT_FILES);
-
-    info_size = 4096;
-    buf = AllocatePool(info_size);
-    if (!buf) {
-        FreePool(files);
-        uefi_call_wrapper(root->Close, 1, root);
-        return EFI_OUT_OF_RESOURCES;
-    }
-
-    uefi_call_wrapper(root->SetPosition, 2, root, 0);
-    UINTN count = 0;
-    while (count < STEVEOS_MAX_BOOT_FILES) {
-        UINTN read_size = info_size;
-        st = uefi_call_wrapper(root->Read, 3, root, &read_size, buf);
-        if (EFI_ERROR(st) || read_size == 0) break;
-        EFI_FILE_INFO *info = (EFI_FILE_INFO *)buf;
-        if (read_size < sizeof(EFI_FILE_INFO) || info->Size > read_size) continue;
-
-        STEVEOS_BOOT_FILE_UEFI *out = &files[count];
-        UINTN j = 0;
-        while (j + 1 < STEVEOS_BOOT_FILE_NAME_MAX && info->FileName[j]) {
-            out->name[j] = info->FileName[j];
-            ++j;
+static void copy_path(const CHAR16 *prefix,const CHAR16 *name,CHAR16 *out){
+    UINTN n=0;
+    while(prefix&&prefix[n]&&n+1<STEVEOS_BOOT_FILE_NAME_MAX){out[n]=prefix[n];n++;}
+    if(n&&out[n-1]!=L'/'&&n+1<STEVEOS_BOOT_FILE_NAME_MAX)out[n++]=L'/';
+    UINTN i=0;
+    while(name&&name[i]&&n+1<STEVEOS_BOOT_FILE_NAME_MAX){out[n++]=name[i++];}
+    out[n]=0;
+}
+static void snapshot_dir(EFI_FILE_PROTOCOL *dir,
+                         STEVEOS_BOOT_FILE_UEFI *files,
+                         UINTN *count,
+                         VOID *buf,
+                         UINTN buf_size,
+                         const CHAR16 *prefix,
+                         UINTN depth){
+    if(!dir||!files||!count||!buf||depth>7||*count>=STEVEOS_MAX_BOOT_FILES)return;
+    uefi_call_wrapper(dir->SetPosition,2,dir,0);
+    while(*count<STEVEOS_MAX_BOOT_FILES){
+        UINTN read_size=buf_size;
+        EFI_STATUS st=uefi_call_wrapper(dir->Read,3,dir,&read_size,buf);
+        if(EFI_ERROR(st)||read_size==0)break;
+        EFI_FILE_INFO *info=(EFI_FILE_INFO*)buf;
+        if(read_size<sizeof(EFI_FILE_INFO)||info->Size>read_size)continue;
+        CHAR16 path[STEVEOS_BOOT_FILE_NAME_MAX];
+        copy_path(prefix,info->FileName,path);
+        STEVEOS_BOOT_FILE_UEFI *out=&files[*count];
+        ZeroMem(out,sizeof(*out));
+        UINTN j=0;
+        while(j+1<STEVEOS_BOOT_FILE_NAME_MAX&&path[j]){
+            out->name[j]=path[j];
+            j++;
         }
-        out->name[j] = 0;
-        out->size = info->FileSize;
-        out->attributes = (UINT32)info->Attribute;
-        out->kind = (info->Attribute & EFI_FILE_DIRECTORY) ? 3u : file_kind(info->FileName);
+        out->name[j]=0;
+        out->size=info->FileSize;
+        out->attributes=(UINT32)info->Attribute;
+        out->kind=(info->Attribute&EFI_FILE_DIRECTORY)?3u:file_kind(info->FileName);
 
-        if (!(info->Attribute & EFI_FILE_DIRECTORY) &&
-            ((out->kind == 1 && out->size > 0 && out->size <= STEVEOS_IMAGE_LOAD_LIMIT) ||
-             (out->kind == 2 && out->size > 0 && out->size <= STEVEOS_TEXT_LOAD_LIMIT))) {
-            EFI_FILE_PROTOCOL *file = NULL;
-            st = uefi_call_wrapper(root->Open, 5, root, &file, info->FileName,
-                                   EFI_FILE_MODE_READ, 0);
-            if (!EFI_ERROR(st) && file) {
-                UINTN pages = (UINTN)((out->size + 4095) / 4096);
-                EFI_PHYSICAL_ADDRESS storage = allocate_pages(pages);
-                if (storage) {
-                    UINTN data_size = (UINTN)out->size;
-                    st = uefi_call_wrapper(file->Read, 3, file, &data_size, (VOID *)(UINTN)storage);
-                    if (!EFI_ERROR(st) && data_size == out->size)
-                        out->data = storage;
-                    else if (storage)
-                        uefi_call_wrapper(BS->FreePages, 2, storage, pages);
+        if(info->Attribute&EFI_FILE_DIRECTORY){
+            (*count)++;
+            if(depth<7){
+                EFI_FILE_PROTOCOL *child=NULL;
+                st=uefi_call_wrapper(dir->Open,5,dir,&child,info->FileName,EFI_FILE_MODE_READ,0);
+                if(!EFI_ERROR(st)&&child){
+                    snapshot_dir(child,files,count,buf,buf_size,path,(UINTN)(depth+1));
+                    uefi_call_wrapper(child->Close,1,child);
                 }
-                uefi_call_wrapper(file->Close, 1, file);
+            }
+            continue;
+        }
+
+        if(((out->kind==1&&out->size>0&&out->size<=STEVEOS_IMAGE_LOAD_LIMIT) ||
+            (out->kind==2&&out->size>0&&out->size<=STEVEOS_TEXT_LOAD_LIMIT))){
+            EFI_FILE_PROTOCOL *file=NULL;
+            st=uefi_call_wrapper(dir->Open,5,dir,&file,info->FileName,EFI_FILE_MODE_READ,0);
+            if(!EFI_ERROR(st)&&file){
+                UINTN pages=(UINTN)((out->size+4095)/4096);
+                EFI_PHYSICAL_ADDRESS storage=allocate_pages(pages);
+                if(storage){
+                    UINTN data_size=(UINTN)out->size;
+                    st=uefi_call_wrapper(file->Read,3,file,&data_size,(VOID*)(UINTN)storage);
+                    if(!EFI_ERROR(st)&&data_size==out->size)out->data=storage;
+                    else uefi_call_wrapper(BS->FreePages,2,storage,pages);
+                }
+                uefi_call_wrapper(file->Close,1,file);
             }
         }
-        ++count;
+        (*count)++;
+    }
+}
+
+static EFI_STATUS snapshot_boot_files(EFI_HANDLE image_handle, STEVEOS_BOOT_INFO *boot){
+    EFI_LOADED_IMAGE_PROTOCOL *loaded=NULL;
+    EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *fs=NULL;
+    EFI_FILE_PROTOCOL *root=NULL;
+    EFI_STATUS st;
+    if(!boot)return EFI_INVALID_PARAMETER;
+    st=uefi_call_wrapper(BS->HandleProtocol,3,image_handle,&gEfiLoadedImageProtocolGuid,(VOID**)&loaded);
+    if(EFI_ERROR(st)||!loaded||!loaded->DeviceHandle)return st;
+    st=uefi_call_wrapper(BS->HandleProtocol,3,loaded->DeviceHandle,&gEfiSimpleFileSystemProtocolGuid,(VOID**)&fs);
+    if(EFI_ERROR(st)||!fs)return st;
+    st=uefi_call_wrapper(fs->OpenVolume,2,fs,&root);
+    if(EFI_ERROR(st)||!root)return st;
+
+    STEVEOS_BOOT_FILE_UEFI *files=AllocatePool(sizeof(*files)*STEVEOS_MAX_BOOT_FILES);
+    if(!files){
+        uefi_call_wrapper(root->Close,1,root);
+        return EFI_OUT_OF_RESOURCES;
+    }
+    ZeroMem(files,sizeof(*files)*STEVEOS_MAX_BOOT_FILES);
+
+    const UINTN buf_size=8192;
+    VOID *buf=AllocatePool(buf_size);
+    if(!buf){
+        FreePool(files);
+        uefi_call_wrapper(root->Close,1,root);
+        return EFI_OUT_OF_RESOURCES;
     }
 
-    boot->boot_files = (UINT64)(UINTN)files;
-    boot->boot_file_count = count;
-    boot->boot_device_handle = (UINT64)(UINTN)loaded->DeviceHandle;
+    UINTN count=0;
+    snapshot_dir(root,files,&count,buf,buf_size,(const CHAR16*)L"",0);
+
+    boot->boot_files=(UINT64)(UINTN)files;
+    boot->boot_file_count=count;
+    boot->boot_device_handle=(UINT64)(UINTN)loaded->DeviceHandle;
     FreePool(buf);
-    uefi_call_wrapper(root->Close, 1, root);
+    uefi_call_wrapper(root->Close,1,root);
     return EFI_SUCCESS;
 }
 
