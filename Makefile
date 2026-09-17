@@ -23,6 +23,20 @@ all: build/BOOTX64.EFI
 build/boot.raw: blehhh.png tools/image_to_raw.py
 	python3 tools/image_to_raw.py
 
+build/mint_icons.raw: third_party/mint-y-icons/usr/share/icons/Mint-Y/apps/48/browser.png \
+	third_party/mint-y-icons/usr/share/icons/Mint-Y/apps/48/accessories-calculator.png \
+	third_party/mint-y-icons/usr/share/icons/Mint-Y/apps/48/accessories-text-editor.png \
+	third_party/mint-y-icons/usr/share/icons/Mint-Y/apps/48/folder.png \
+	third_party/mint-y-icons/usr/share/icons/Mint-Y/apps/48/Terminal.png \
+	third_party/mint-y-icons/usr/share/icons/Mint-Y/apps/48/gnome-system-monitor.png \
+	third_party/mint-y-icons/usr/share/icons/Mint-Y/apps/48/cinnamon-preferences-color.png \
+	third_party/mint-y-icons/usr/share/icons/Mint-Y/apps/48/calendar.png tools/mint_icons_to_raw.py
+	python3 tools/mint_icons_to_raw.py
+
+build/mint_icons.raw.o: build/mint_icons.raw
+	$(OBJCOPY) --input-target=binary --output-target=elf64-x86-64 \
+		--binary-architecture=i386:x86-64 build/mint_icons.raw build/mint_icons.raw.o
+
 build/boot.raw.o: build/boot.raw
 	$(OBJCOPY) --input-target=binary --output-target=elf64-x86-64 \
 		--binary-architecture=i386:x86-64 build/boot.raw build/boot.raw.o
@@ -95,11 +109,11 @@ build/native-kernel-main.o: kernel/main.c kernel/desktop.h src/bootinfo.h build/
 	mkdir -p build
 	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
 
-build/native-kernel-desktop.o: kernel/desktop.c kernel/desktop.h src/bootinfo.h
+build/native-kernel-desktop.o: kernel/desktop.c kernel/desktop.h src/bootinfo.h build/mint_icons.raw.o
 	mkdir -p build
 	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
 
-build/native_kernel.elf: build/native-kernel-entry.o build/native-kernel-main.o build/native-kernel-desktop.o build/native-kernel-arch.o build/native-kernel-usb.o build/native-kernel-i2c.o build/native-kernel-input.o build/boot.raw.o
+build/native_kernel.elf: build/native-kernel-entry.o build/native-kernel-main.o build/native-kernel-desktop.o build/native-kernel-arch.o build/native-kernel-usb.o build/native-kernel-i2c.o build/native-kernel-input.o build/boot.raw.o build/mint_icons.raw.o
 	$(LD) -T kernel/linker.ld -o $@ $^
 
 build/native_kernel.raw: build/native_kernel.elf
