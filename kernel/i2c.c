@@ -85,11 +85,23 @@ static int i2c_read_input(uint8_t*out,size_t len){
 
 static int i2c_read_register(uint16_t reg,uint8_t*out,size_t len){
     if(!ready||!out||!len||len>255)return 0;
-    *(volatile uint32_t*)(base+DW_TAR)=address;(void)*(volatile uint32_t*)(base+DW_CLR_INTR);
-    if(!wait_tx(50000))return 0;*(volatile uint32_t*)(base+DW_DATA_CMD)=(uint32_t)(reg&0xFFu);
-    if(!wait_tx(50000))return 0;*(volatile uint32_t*)(base+DW_DATA_CMD)=(uint32_t)(reg>>8);
-    for(size_t i=0;i<len;i++){if(!wait_tx(50000))return 0;uint32_t c=DW_DATA_READ|(i?0:DW_DATA_RESTART);if(i+1==len)c|=DW_DATA_STOP;*(volatile uint32_t*)(base+DW_DATA_CMD)=c;}
-    for(size_t i=0;i<len;i++){if(!wait_rx(50000))return 0;out[i]=(uint8_t)*(volatile uint32_t*)(base+DW_DATA_CMD);}return 1;
+    *(volatile uint32_t*)(base+DW_TAR)=address;
+    (void)*(volatile uint32_t*)(base+DW_CLR_INTR);
+    if(!wait_tx(50000))return 0;
+    *(volatile uint32_t*)(base+DW_DATA_CMD)=(uint32_t)(reg&0xFFu);
+    if(!wait_tx(50000))return 0;
+    *(volatile uint32_t*)(base+DW_DATA_CMD)=(uint32_t)(reg>>8);
+    for(size_t i=0;i<len;i++){
+        if(!wait_tx(50000))return 0;
+        uint32_t c=DW_DATA_READ|(i?0:DW_DATA_RESTART);
+        if(i+1==len)c|=DW_DATA_STOP;
+        *(volatile uint32_t*)(base+DW_DATA_CMD)=c;
+    }
+    for(size_t i=0;i<len;i++){
+        if(!wait_rx(50000))return 0;
+        out[i]=(uint8_t)*(volatile uint32_t*)(base+DW_DATA_CMD);
+    }
+    return 1;
 }
 
 static int find_controller(uint64_t*bar_out){
@@ -98,7 +110,8 @@ static int find_controller(uint64_t*bar_out){
         uint32_t cmd=pci_read32((uint8_t)b,(uint8_t)d,(uint8_t)f,4);pci_write32((uint8_t)b,(uint8_t)d,(uint8_t)f,4,cmd|6u);
         uint32_t lo=pci_read32((uint8_t)b,(uint8_t)d,(uint8_t)f,0x10);if(lo&1u)continue;
         uint64_t bar=(uint64_t)(lo&0xFFFFFFF0u);if(((lo>>1)&3u)==2u)bar|=(uint64_t)pci_read32((uint8_t)b,(uint8_t)d,(uint8_t)f,0x14)<<32;
-        if(!bar)continue;if(*(volatile uint32_t*)(uintptr_t)(bar+DW_COMP_TYPE)==0x44570140u){*bar_out=bar;return 1;}
+        if(!bar)continue;
+        if(*(volatile uint32_t*)(uintptr_t)(bar+DW_COMP_TYPE)==0x44570140u){*bar_out=bar;return 1;}
     }return 0;
 }
 
@@ -159,7 +172,9 @@ int native_i2c_hid_init(void){
     uint64_t bar=0;ready=device_ready=0;report_len=0;have_last_abs=0;last_buttons=0;
     if(!find_controller(&bar)||!controller_start(bar)||!find_hid_device())return 0;
     report_len=hid.report_desc_len;if(report_len>sizeof(report_desc))report_len=sizeof(report_desc);
-    if(!i2c_read_register(hid.report_desc_reg,report_desc,report_len))return 0;parse_report();return 1;
+    if(!i2c_read_register(hid.report_desc_reg,report_desc,report_len))return 0;
+    parse_report();
+    return 1;
 }
 
 void native_i2c_hid_poll(void){
