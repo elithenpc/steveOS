@@ -597,16 +597,41 @@ static void draw_settings(void){
     fill_rect(42,202,(int)width-84,54,panel_color());text(58,220,"POINTER SCALE",text_color(),1);u64_text((int)width-190,220,pointer_scale,accent_color(),1);text(58,238,"1 TO 4",sub_color(),1);
     text(42,290,"ACCENT",accent_color(),1);fill_rect(42,308,(int)width-84,54,panel_color());text(58,326,"ACCENT PRESET",text_color(),1);u64_text((int)width-190,326,(uint64_t)(accent_id+1),accent_color(),1);text((int)width-155,326,"1-4",sub_color(),1);
     text(42,388,"INPUT",accent_color(),1);fill_rect(42,406,(int)width-84,92,panel_color());text(58,424,native_usb_mouse_present()?"USB HID MOUSE ACTIVE":"USB HID MOUSE OFF",text_color(),1);text(58,446,native_i2c_hid_present()?"I2C HID TOUCHPAD ACTIVE":"I2C HID TOUCHPAD OFF",sub_color(),1);text(58,468,"NATIVE PS/2 KEYBOARD ACTIVE",sub_color(),1);
-    text(42,520,"NETWORK",accent_color(),1);fill_rect(42,538,(int)width-84,78,panel_color());text(58,466,boot_info->uefi_http_get?"UEFI HTTP SERVICE AVAILABLE":"UEFI HTTP SERVICE UNAVAILABLE",text_color(),1);text(58,488,"BROWSER USES FIRMWARE DNS + HTTP STACK",sub_color(),1);
+    text(42,520,"NETWORK",accent_color(),1);fill_rect(42,538,(int)width-84,78,panel_color());text(58,556,boot_info->uefi_http_get?"UEFI HTTP SERVICE AVAILABLE":"UEFI HTTP SERVICE UNAVAILABLE",text_color(),1);text(58,578,"BROWSER USES FIRMWARE DNS + HTTP STACK",sub_color(),1);
     text(42,(int)height-98,"CLICK THEME/POINTER/ACCENT ROWS  •  F5 SAVE TO NVRAM",sub_color(),1);taskbar();
 }
 
+static int leap_year(int y){return (y%4==0&&y%100!=0)||(y%400==0);}
+static int month_days(int y,int m){
+    static const int d[]={31,28,31,30,31,30,31,31,30,31,30,31};
+    if(m==2)return d[m-1]+(leap_year(y)?1:0);
+    return d[m-1];
+}
+static int weekday_monday0(int y,int m,int d){
+    static const int t[]={0,3,2,5,0,3,5,1,4,6,2,4};
+    if(m<3)y--;
+    return (y+y/4-y/100+y/400+t[m-1]+d+6)%7;
+}
 static void draw_calendar(void){
-    window_bar("CALENDAR","FIRMWARE REAL-TIME CLOCK");EFI_TIME_STEV t={0};GETTIME gt=(GETTIME)(uintptr_t)boot_info->uefi_get_time;if(gt)gt(&t,NULL);if(!t.year){text(54,132,"FIRMWARE CLOCK UNAVAILABLE",danger_color(),2);taskbar();return;}
+    window_bar("CALENDAR","FIRMWARE REAL-TIME CLOCK");
+    EFI_TIME_STEV t={0};GETTIME gt=(GETTIME)(uintptr_t)boot_info->uefi_get_time;
+    if(gt)gt(&t,NULL);
+    if(!t.year){text(54,132,"FIRMWARE CLOCK UNAVAILABLE",danger_color(),2);taskbar();return;}
     char date[32];date[0]=(char)('0'+(t.day/10));date[1]=(char)('0'+t.day%10);date[2]='/';date[3]=(char)('0'+(t.month/10));date[4]=(char)('0'+t.month%10);date[5]='/';date[6]=(char)('0'+(t.year/1000)%10);date[7]=(char)('0'+(t.year/100)%10);date[8]=(char)('0'+(t.year/10)%10);date[9]=(char)('0'+t.year%10);date[10]=0;
     char time[16];time[0]=(char)('0'+(t.hour/10));time[1]=(char)('0'+t.hour%10);time[2]=':';time[3]=(char)('0'+(t.minute/10));time[4]=(char)('0'+t.minute%10);time[5]=':';time[6]=(char)('0'+(t.second/10));time[7]=(char)('0'+t.second%10);time[8]=0;
-    text(54,130,date,text_color(),3);text(54,186,time,accent_color(),3);text(54,246,"CURRENT FIRMWARE DATE AND TIME",sub_color(),1);
-    const char*days[]={"MON","TUE","WED","THU","FRI","SAT","SUN"};for(int i=0;i<7;i++)text(52+i*74,302,days[i],sub_color(),1);for(int r=0;r<5;r++)for(int c=0;c<7;c++){int num=r*7+c+1;fill_rect(46+c*74,330+r*42,58,32,num==t.day?accent_dark():panel2_color());u64_text(67+c*74,340,(uint64_t)num,num==t.day?0xFFFFFFu:text_color(),1);}taskbar();
+    text(54,122,date,text_color(),2);text(210,122,time,accent_color(),2);text(54,158,"CURRENT FIRMWARE DATE AND TIME",sub_color(),1);
+    const char*days[]={"MON","TUE","WED","THU","FRI","SAT","SUN"};
+    int cellw=(int)width>750?74:((int)width-92)/7;
+    int cellh=(int)height>720?42:34;
+    int x0=46,y0=202,first=weekday_monday0((int)t.year,(int)t.month,1),days_in=month_days((int)t.year,(int)t.month);
+    for(int i=0;i<7;i++)text(x0+i*cellw+12,y0,days[i],sub_color(),1);
+    for(int slot=0;slot<42;slot++){
+        int num=slot-first+1;if(num<1||num>days_in)continue;
+        int col=slot%7,row=slot/7,x=x0+col*cellw,y=y0+22+row*cellh;
+        fill_rect(x,y,58,cellh-6,num==t.day?accent_dark():panel2_color());
+        u64_text(x+21,y+8,(uint64_t)num,num==t.day?0xFFFFFFu:text_color(),1);
+    }
+    taskbar();
 }
 
 static void draw_control(void){
