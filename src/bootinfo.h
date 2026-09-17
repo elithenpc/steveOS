@@ -35,6 +35,7 @@ typedef struct {
     uint64_t uefi_set_variable;
     uint64_t uefi_get_time;
     uint64_t uefi_http_get;
+    uint64_t uefi_write_text;
     uint64_t boot_files;
     uint64_t boot_file_count;
     uint64_t boot_device_handle;
