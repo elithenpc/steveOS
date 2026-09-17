@@ -1129,11 +1129,17 @@ void steveos_desktop_init(STEVEOS_BOOT_INFO *boot){
     boot_info=boot;boot_files=(STEVEOS_BOOT_FILE*)(uintptr_t)boot->boot_files;framebuffer=(uint32_t*)(uintptr_t)boot->framebuffer_base;width=(uint32_t)boot->width;height=(uint32_t)boot->height;stride=(uint32_t)boot->pixels_per_scanline;memory_stats();init_backbuffer();load_settings();load_note();load_bookmarks();browser_tab_count=1;browser_current_tab=0;browser_tabs[0][0]=0;calc_input[0]=0;terminal_lines[0][0]=0;terminal_add("STEVEOS NATIVE SHELL");terminal_add("TYPE HELP FOR COMMANDS");browser_focus=0;dirty=1;}
 
 void steveos_desktop_run(STEVEOS_BOOT_INFO *boot){
-    (void)boot;uint32_t last_x=native_pointer_x(),last_y=native_pointer_y();uint8_t last_b=native_pointer_buttons();
+    (void)boot;
+    uint32_t last_x=native_pointer_x(),last_y=native_pointer_y();
+    uint8_t last_b=native_pointer_buttons();
+    uint32_t refresh_ticks=0;
     for(;;){
         uint8_t s=native_keyboard_read_scancode();if(s){handle_scan(s);dirty=1;}
-        uint32_t x=native_pointer_x(),y=native_pointer_y();uint8_t b=native_pointer_buttons();if(x!=last_x||y!=last_y||b!=last_b){dirty=1;last_x=x;last_y=y;last_b=b;}
-        if((b&1)&&!(previous_buttons&1)){if(menu_open)menu_click(x,y);else app_click(x,y);dirty=1;}previous_buttons=b;
+        uint32_t x=native_pointer_x(),y=native_pointer_y();uint8_t b=native_pointer_buttons();
+        if(x!=last_x||y!=last_y||b!=last_b){dirty=1;last_x=x;last_y=y;last_b=b;}
+        if((b&1)&&!(previous_buttons&1)){if(menu_open)menu_click(x,y);else app_click(x,y);dirty=1;}
+        previous_buttons=b;
+        if(++refresh_ticks>=8000){refresh_ticks=0;dirty=1;}
         if(dirty)render();
         for(volatile int i=0;i<1800;i++)__asm__ __volatile__("pause");
     }
