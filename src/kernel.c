@@ -10,6 +10,7 @@ extern const unsigned char _binary_build_native_kernel_raw_end[];
 typedef void (*STEVEOS_NATIVE_ENTRY)(STEVEOS_BOOT_INFO *boot, void *stack_top);
 #define STEVEOS_KERNEL_LOAD_ADDRESS 0x00200000ULL
 #define STEVEOS_IMAGE_LOAD_LIMIT (2ULL * 1024ULL * 1024ULL)
+#define STEVEOS_TEXT_LOAD_LIMIT (256ULL * 1024ULL)
 #define EFI_FILE_DIRECTORY 0x10ULL
 
 typedef struct {
@@ -99,7 +100,11 @@ static UINT32 file_kind(const CHAR16 *name) {
         has_ext(name, L".jpg") || has_ext(name, L".jpeg") ||
         has_ext(name, L".ppm")) return 1;
     if (has_ext(name, L".txt") || has_ext(name, L".md") ||
-        has_ext(name, L".log")) return 2;
+        has_ext(name, L".log") || has_ext(name, L".html") || has_ext(name, L".htm") ||
+        has_ext(name, L".css") || has_ext(name, L".json") || has_ext(name, L".xml") ||
+        has_ext(name, L".csv") || has_ext(name, L".c") || has_ext(name, L".h") ||
+        has_ext(name, L".hxx") || has_ext(name, L".cpp") || has_ext(name, L".py") ||
+        has_ext(name, L".sh") || has_ext(name, L".ini") || has_ext(name, L".cfg")) return 2;
     return 0;
 }
 
@@ -156,8 +161,9 @@ static EFI_STATUS snapshot_boot_files(EFI_HANDLE image_handle, STEVEOS_BOOT_INFO
         out->attributes = (UINT32)info->Attribute;
         out->kind = (info->Attribute & EFI_FILE_DIRECTORY) ? 3u : file_kind(info->FileName);
 
-        if (!(info->Attribute & EFI_FILE_DIRECTORY) && out->kind == 1 &&
-            out->size > 0 && out->size <= STEVEOS_IMAGE_LOAD_LIMIT) {
+        if (!(info->Attribute & EFI_FILE_DIRECTORY) &&
+            ((out->kind == 1 && out->size > 0 && out->size <= STEVEOS_IMAGE_LOAD_LIMIT) ||
+             (out->kind == 2 && out->size > 0 && out->size <= STEVEOS_TEXT_LOAD_LIMIT))) {
             EFI_FILE_PROTOCOL *file = NULL;
             st = uefi_call_wrapper(root->Open, 5, root, &file, info->FileName,
                                    EFI_FILE_MODE_READ, 0);
