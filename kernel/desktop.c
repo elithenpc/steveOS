@@ -3,17 +3,37 @@
 #include "../src/bootinfo.h"
 #include "desktop.h"
 
+#define NOTE_MAX 768
+#define CALC_MAX 191
+#define TERM_MAX 191
+#define TERM_LINES 12
+#define BROWSER_RAW_MAX 12288
+#define BROWSER_TEXT_MAX 8192
+#define BROWSER_URL_MAX 191
+#define BROWSER_LINKS 8
+#define BROWSER_LINK_MAX 159
 #define EFI_CONVENTIONAL_MEMORY 7
-#define NOTE_MAX 512
-#define CALC_MAX 31
-#define TERM_MAX 256
 
-enum { APP_DESKTOP, APP_CALC, APP_NOTE, APP_FILES, APP_IMAGE, APP_SETTINGS, APP_TASKS, APP_TERMINAL, APP_ABOUT };
+enum {
+    APP_DESKTOP, APP_BROWSER, APP_CALC, APP_EDITOR, APP_FILES, APP_IMAGE,
+    APP_SETTINGS, APP_TASKS, APP_TERMINAL, APP_CALENDAR, APP_CONTROL,
+    APP_ABOUT
+};
 
 typedef struct { uint32_t a,b,c,d; } GUID;
 typedef uint64_t (__attribute__((ms_abi)) *GETVAR)(uint16_t*,GUID*,uint32_t*,uint64_t*,void*);
 typedef uint64_t (__attribute__((ms_abi)) *SETVAR)(uint16_t*,GUID*,uint32_t,uint64_t,void*);
+typedef uint64_t (__attribute__((ms_abi)) *GETTIME)(void*,void*);
+typedef uint64_t (*HTTPGET)(const uint16_t*,char*,uint64_t,uint64_t*,uint32_t*);
 typedef struct { uint32_t magic; uint8_t light; uint8_t scale; uint16_t reserved; } SETTINGS;
+
+typedef struct {
+    uint16_t year;
+    uint8_t month,day,hour,minute,second,pad1;
+    uint32_t nanosecond;
+    int16_t timezone;
+    uint8_t daylight,pad2;
+} EFI_TIME_STEV;
 
 extern void native_reboot(void);
 extern void native_halt(void);
@@ -33,17 +53,30 @@ static uint64_t total_memory,largest_region;
 static int current_app=APP_DESKTOP;
 static int selected_file=-1,file_scroll;
 static uint8_t previous_buttons,light_theme,pointer_scale=1,note_dirty;
+static uint8_t menu_open;
 static uint8_t note[NOTE_MAX+1];
 static size_t note_len,note_cursor;
 static char calc_input[CALC_MAX+1];
 static size_t calc_len;
-static uint64_t calc_value;
-static char calc_op;
-static uint8_t calc_pending;
-static char terminal_input[TERM_MAX];
+static int64_t calc_result;
+static uint8_t calc_has_result;
+static char terminal_input[TERM_MAX+1];
 static size_t terminal_len;
-static char terminal_lines[8][64];
+static char terminal_lines[TERM_LINES][64];
 static uint8_t terminal_count;
+static char browser_url[BROWSER_URL_MAX+1]="http://neverssl.com/";
+static char browser_raw[BROWSER_RAW_MAX];
+static char browser_text[BROWSER_TEXT_MAX];
+static char browser_title[96];
+static char browser_link_urls[BROWSER_LINKS][BROWSER_LINK_MAX+1];
+static char browser_link_text[BROWSER_LINKS][48];
+static uint8_t browser_link_count;
+static int browser_scroll;
+static uint32_t browser_status;
+static uint8_t browser_loaded;
+static uint8_t browser_focus;
+static uint8_t shift_down;
+static uint8_t dirty=1;
 
 static const GUID note_guid={0x53544556,0x4F53,0x4E56,0x00010001};
 static const GUID settings_guid={0x53544556,0x4F53,0x4E56,0x00010002};
@@ -59,16 +92,21 @@ static const uint8_t letters[26][5]={
 {0x3F,0x40,0x40,0x40,0x3F},{0x1F,0x20,0x40,0x20,0x1F},{0x7F,0x20,0x18,0x20,0x7F},{0x63,0x14,0x08,0x14,0x63},
 {0x07,0x08,0x70,0x08,0x07},{0x61,0x51,0x49,0x45,0x43}};
 static const uint8_t digits[10][5]={
-{0x3E,0x45,0x49,0x51,0x3E},{0x00,0x21,0x7F,0x01,0x00},{0x23,0x45,0x49,0x49,0x31},{0x22,0x41,0x49,0x49,0x36},{0x0C,0x14,0x24,0x7F,0x04},
-{0x7A,0x49,0x49,0x49,0x46},{0x3E,0x49,0x49,0x49,0x26},{0x40,0x47,0x48,0x50,0x60},{0x36,0x49,0x49,0x49,0x36},{0x32,0x49,0x49,0x49,0x3E}};
+{0x3E,0x45,0x49,0x51,0x3E},{0x00,0x21,0x7F,0x01,0x00},{0x23,0x45,0x49,0x49,0x31},{0x22,0x41,0x49,0x49,0x36},
+{0x0C,0x14,0x24,0x7F,0x04},{0x7A,0x49,0x49,0x49,0x46},{0x3E,0x49,0x49,0x49,0x26},{0x40,0x47,0x48,0x50,0x60},
+{0x36,0x49,0x49,0x49,0x36},{0x32,0x49,0x49,0x49,0x3E}};
 
-static uint32_t bg_color(void){return light_theme?0xF2F5F8u:0x0B1220u;}
-static uint32_t panel_color(void){return light_theme?0xFFFFFFu:0x151F2Fu;}
-static uint32_t panel2_color(void){return light_theme?0xE2E8F0u:0x1D2A3Eu;}
-static uint32_t text_color(void){return light_theme?0x172033u:0xF4F7FBu;}
-static uint32_t sub_color(void){return light_theme?0x5D6B7Eu:0xA8B5C7u;}
-static uint32_t good_color(void){return light_theme?0x4D8B68u:0x8BC6A3u;}
+static uint32_t bg_color(void){return light_theme?0xF1F4F6u:0x0B1016u;}
+static uint32_t panel_color(void){return light_theme?0xFFFFFFu:0x171E27u;}
+static uint32_t panel2_color(void){return light_theme?0xE2E8ECu:0x202A36u;}
+static uint32_t text_color(void){return light_theme?0x17202Au:0xF2F6F8u;}
+static uint32_t sub_color(void){return light_theme?0x5D6B75u:0xA5B2BCu;}
+static uint32_t accent_color(void){return light_theme?0x5FAF3Fu:0x8BCF4Fu;}
+static uint32_t accent_dark(void){return light_theme?0x4B8E31u:0x5A972Du;}
+static uint32_t danger_color(void){return light_theme?0xB64A4Au:0xE27F80u;}
+static uint32_t good_color(void){return light_theme?0x3E8A50u:0x88CF98u;}
 
+static void mark_dirty(void){dirty=1;}
 static void fill_rect(int x,int y,int w,int h,uint32_t c){
     if(!backbuffer||w<=0||h<=0)return;
     int x0=x<0?0:x,y0=y<0?0:y,x1=x+w,y1=y+h;
@@ -78,6 +116,7 @@ static void fill_rect(int x,int y,int w,int h,uint32_t c){
         for(int xx=x0;xx<x1;xx++)*p++=c;
     }
 }
+static void stroke_rect(int x,int y,int w,int h,uint32_t c){fill_rect(x,y,w,1,c);fill_rect(x,y+h-1,w,1,c);fill_rect(x,y,1,h,c);fill_rect(x+w-1,y,1,h,c);}
 static void put_pixel(int x,int y,uint32_t c){if(backbuffer&&x>=0&&y>=0&&(uint32_t)x<width&&(uint32_t)y<height)backbuffer[(size_t)y*stride+(size_t)x]=c;}
 static int hit(uint32_t x,uint32_t y,int a,int b,int w,int h){return x>=(uint32_t)a&&x<(uint32_t)(a+w)&&y>=(uint32_t)b&&y<(uint32_t)(b+h);}
 static const uint8_t*glyph_data(char c){if(c>='A'&&c<='Z')return letters[c-'A'];if(c>='a'&&c<='z')return letters[c-'a'];if(c>='0'&&c<='9')return digits[c-'0'];return NULL;}
@@ -87,14 +126,30 @@ static void glyph(int x,int y,char c,uint32_t col,int s){
     if(c=='+'){fill_rect(x+2*s,y,s,7*s,col);fill_rect(x,y+3*s,5*s,s,col);}
     else if(c=='-')fill_rect(x,y+3*s,5*s,s,col);
     else if(c=='='){fill_rect(x,y+2*s,5*s,s,col);fill_rect(x,y+5*s,5*s,s,col);}
-    else if(c=='*'){fill_rect(x+2*s,y,s,7*s,col);fill_rect(x,y+2*s,5*s,s,col);}
+    else if(c=='*'){fill_rect(x+2*s,y,s,7*s,col);fill_rect(x,y+2*s,5*s,s,col);fill_rect(x+1*s,y+4*s,3*s,s,col);}
     else if(c=='/')for(int i=0;i<7;i++)fill_rect(x+(6-i)*s,y+i*s,s,s,col);
     else if(c==':'){fill_rect(x,y+s,s,s,col);fill_rect(x,y+5*s,s,s,col);}
     else if(c=='.')fill_rect(x,y+6*s,s,s,col);
+    else if(c==','){fill_rect(x,y+6*s,s,s,col);fill_rect(x-s,y+7*s,s,s,col);}
     else if(c=='!'){fill_rect(x+2*s,y,s,5*s,col);fill_rect(x+2*s,y+6*s,s,s,col);}
+    else if(c=='?'){fill_rect(x,y,s*5,s,col);fill_rect(x+4*s,y,s,s*3);fill_rect(x+2*s,y+3*s,s,s*2);fill_rect(x+2*s,y+6*s,s,s,col);}
+    else if(c=='_')fill_rect(x,y+7*s,5*s,s,col);
+    else if(c=='|')fill_rect(x+2*s,y,s,8*s,col);
+    else if(c=='('){fill_rect(x+s,y+s,s,s*6,col);fill_rect(x+2*s,y,s,s,col);fill_rect(x+2*s,y+7*s,s,s,col);}
+    else if(c==')'){fill_rect(x+3*s,y+s,s,s*6,col);fill_rect(x+2*s,y,s,s,col);fill_rect(x+2*s,y+7*s,s,s,col);}
+    else if(c=='['){fill_rect(x,y,5*s,s,col);fill_rect(x,y, s,8*s,col);fill_rect(x,y+7*s,5*s,s,col);}
+    else if(c==']'){fill_rect(x,y,5*s,s,col);fill_rect(x+4*s,y,s,8*s,col);fill_rect(x,y+7*s,5*s,s,col);}
+    else if(c=='#'){fill_rect(x+s,y,s,s*8,col);fill_rect(x+3*s,y,s,s*8,col);fill_rect(x,y+2*s,5*s,s,col);fill_rect(x,y+5*s,5*s,s,col);}
+    else if(c=='%'){fill_rect(x,y,s,s,col);fill_rect(x+4*s,y+6*s,s,s,col);for(int i=0;i<5;i++)fill_rect(x+(4-i)*s,y+i*s,s,s,col);}
 }
-static void text(int x,int y,const char*s,uint32_t col,int sc){while(*s){if(*s==' ')x+=6*sc;else{glyph(x,y,*s,col,sc);x+=6*sc;}s++;}}
-static void number(int x,int y,uint64_t v,uint32_t col,int sc){char b[32];int n=0;if(!v)b[n++]='0';while(v&&n<31){b[n++]=(char)('0'+v%10);v/=10;}while(n){glyph(x,y,b[--n],col,sc);x+=6*sc;}}
+static void text(int x,int y,const char*s,uint32_t col,int sc){while(*s){if(*s==' ')x+=6*sc;else{glyph(x,y,*s,col,sc);x+=6*sc;}}}
+static void text_clip(int x,int y,const char*s,uint32_t col,int sc,int maxw){int n=0;while(*s&&n+6*sc<=maxw){if(*s==' ')x+=6*sc;else{glyph(x,y,*s,col,sc);x+=6*sc;}s++;n+=6*sc;}}
+static void u64_text(int x,int y,uint64_t v,uint32_t col,int sc){char b[32];int n=0;if(!v)b[n++]='0';while(v&&n<31){b[n++]=(char)('0'+v%10);v/=10;}while(n){glyph(x,y,b[--n],col,sc);x+=6*sc;}}
+static void s64_text(int x,int y,int64_t v,uint32_t col,int sc){if(v<0){glyph(x,y,'-',col,sc);x+=6*sc;u64_text(x,y,(uint64_t)(-v),col,sc);}else u64_text(x,y,(uint64_t)v,col,sc);}
+static int str_eq(const char*a,const char*b){while(*a&&*b&&*a==*b){a++;b++;}return *a==0&&*b==0;}
+static int ci_eq(const char*a,const char*b){while(*a&&*b){char x=*a,y=*b;if(x>='A'&&x<='Z')x=(char)(x-'A'+'a');if(y>='A'&&y<='Z')y=(char)(y-'A'+'a');if(x!=y)return 0;a++;b++;}return *a==0&&*b==0;}
+static int begins_ci(const char*a,const char*b){while(*b){char x=*a++,y=*b++;if(x>='A'&&x<='Z')x=(char)(x-'A'+'a');if(y>='A'&&y<='Z')y=(char)(y-'A'+'a');if(x!=y)return 0;}return 1;}
+static const char*find_ci(const char*s,const char*needle){if(!*needle)return s;for(;*s;s++)if(begins_ci(s,needle))return s;return NULL;}
 
 static void present(void){
     if(!framebuffer||!backbuffer)return;
@@ -103,22 +158,14 @@ static void present(void){
     for(size_t i=0;i<n;i++)framebuffer[i]=backbuffer[i];
     native_pointer_show();
 }
-static int init_backbuffer(void){
-    uint64_t bytes=(uint64_t)stride*height*4ULL;
-    if(!boot_info->memory_map||!boot_info->memory_descriptor_size){backbuffer=framebuffer;return 1;}
-    uint8_t*p=(uint8_t*)(uintptr_t)boot_info->memory_map,*e=p+boot_info->memory_map_size;uint64_t best_end=0;
-    while(p+boot_info->memory_descriptor_size<=e){
-        uint32_t type=*(uint32_t*)p;uint64_t*q=(uint64_t*)(p+8),start=q[0],size=q[1]*4096ULL;
-        if(type==EFI_CONVENTIONAL_MEMORY&&size>=bytes+0x100000ULL&&start+size>best_end)best_end=start+size;
-        p+=boot_info->memory_descriptor_size;
-    }
-    if(!best_end){backbuffer=framebuffer;return 1;}
-    backbuffer=(uint32_t*)(uintptr_t)((best_end-bytes)&~0xFFFULL);
-    for(uint64_t i=0;i<(uint64_t)stride*height;i++)backbuffer[i]=bg_color();
-    return 1;
+static void init_backbuffer(void){
+    if(boot_info->backbuffer_base&&boot_info->backbuffer_size>=(uint64_t)stride*height*4ULL)
+        backbuffer=(uint32_t*)(uintptr_t)boot_info->backbuffer_base;
+    else backbuffer=framebuffer;
 }
 static void memory_stats(void){
     total_memory=largest_region=0;
+    if(!boot_info->memory_map||!boot_info->memory_descriptor_size)return;
     uint8_t*p=(uint8_t*)(uintptr_t)boot_info->memory_map,*e=p+boot_info->memory_map_size;
     while(p+boot_info->memory_descriptor_size<=e){
         uint32_t type=*(uint32_t*)p;uint64_t*q=(uint64_t*)(p+8);
@@ -129,16 +176,14 @@ static void memory_stats(void){
 static void load_settings(void){
     light_theme=0;pointer_scale=1;
     if(boot_info->uefi_get_variable){
-        GETVAR get=(GETVAR)(uintptr_t)boot_info->uefi_get_variable;
-        SETTINGS s={0x53545653u,0,1,0};uint32_t a=0;uint64_t z=sizeof(s);
+        GETVAR get=(GETVAR)(uintptr_t)boot_info->uefi_get_variable;uint32_t a=0;uint64_t z=sizeof(SETTINGS);SETTINGS s={0};
         if(get((uint16_t*)settings_name,(GUID*)&settings_guid,&a,&z,&s)==0&&s.magic==0x53545653u){light_theme=s.light?1:0;pointer_scale=s.scale<1?1:(s.scale>4?4:s.scale);}
     }
     native_pointer_set_scale(pointer_scale);
 }
 static void save_settings(void){
     if(!boot_info->uefi_set_variable)return;
-    SETVAR set=(SETVAR)(uintptr_t)boot_info->uefi_set_variable;SETTINGS s={0x53545653u,light_theme,pointer_scale,0};
-    set((uint16_t*)settings_name,(GUID*)&settings_guid,7,sizeof(s),&s);
+    SETVAR set=(SETVAR)(uintptr_t)boot_info->uefi_set_variable;SETTINGS s={0x53545653u,light_theme,pointer_scale,0};set((uint16_t*)settings_name,(GUID*)&settings_guid,7,sizeof(s),&s);
 }
 static void load_note(void){
     note_len=note_cursor=0;note_dirty=0;
@@ -151,61 +196,332 @@ static void save_note(void){
     SETVAR set=(SETVAR)(uintptr_t)boot_info->uefi_set_variable;set((uint16_t*)note_name,(GUID*)&note_guid,7,note_len,note);note_dirty=0;
 }
 static void file_name(const STEVEOS_BOOT_FILE*f,char*out,size_t cap){size_t i=0;if(!cap)return;while(f&&i+1<cap&&i<STEVEOS_BOOT_FILE_NAME_MAX&&f->name[i]){uint16_t c=f->name[i++];out[i-1]=c<128?(char)c:'?';}out[i]=0;}
-static void load_text_file(STEVEOS_BOOT_FILE*f){
-    if(!f||!f->data||!f->size)return;size_t n=(size_t)f->size;if(n>NOTE_MAX)n=NOTE_MAX;const uint8_t*d=(const uint8_t*)(uintptr_t)f->data;
-    for(size_t i=0;i<n;i++)note[i]=(d[i]>=32||d[i]=='\n'||d[i]=='\t')?d[i]:' ';
-    note[n]=0;note_len=n;note_cursor=n;note_dirty=0;current_app=APP_NOTE;
+static void load_text_file(STEVEOS_BOOT_FILE*f){if(!f||!f->data||!f->size)return;size_t n=(size_t)f->size;if(n>NOTE_MAX)n=NOTE_MAX;const uint8_t*d=(const uint8_t*)(uintptr_t)f->data;for(size_t i=0;i<n;i++)note[i]=(d[i]>=32||d[i]=='\n'||d[i]=='\t')?d[i]:' ';note[n]=0;note_len=n;note_cursor=n;note_dirty=0;current_app=APP_EDITOR;mark_dirty();}
+static void panel(void){
+    fill_rect(0,0,(int)width,(int)height,bg_color());
+    fill_rect(0,0,(int)width,42,light_theme?0xDCE3E7u:0x151D26u);
+    fill_rect(0,42,(int)width,2,accent_dark());
+    text(18,13,"STEVEOS",text_color(),2);
+    text(105,16,"SYSTEM",sub_color(),1);
+    text((int)width-230,15,native_usb_mouse_present()?"USB":"INPUT",sub_color(),1);
 }
-static void topbar(const char*t){fill_rect(0,0,(int)width,56,light_theme?0xDDE4ECu:0x121B29u);text(24,18,"STEVEOS",text_color(),2);text(145,22,t,sub_color(),1);text((int)width-180,22,native_usb_mouse_present()?"USB MOUSE":"NATIVE INPUT",sub_color(),1);}
+static void taskbar(void){
+    int h=54,y=(int)height-h;
+    fill_rect(0,y,(int)width,h,light_theme?0xD5DCE1u:0x161D26u);
+    fill_rect(0,y,(int)width,1,light_theme?0xBAC4CBu:0x2A3643u);
+    fill_rect(12,y+8,58,38,menu_open?accent_dark():accent_color());
+    text(25,y+20,"MENU",0xFFFFFFu,1);
+    const char*icons[]={"WEB","CALC","NOTE","FILES","TERM","SET"};
+    const int apps[]={APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_TERMINAL,APP_SETTINGS};
+    for(int i=0;i<6;i++){
+        int x=84+i*72;fill_rect(x,y+8,64,38,(current_app==apps[i])?panel2_color():panel_color());
+        text(x+10,y+20,icons[i],text_color(),1);
+    }
+    text((int)width-154,y+20,"STEVEOS",sub_color(),1);
+    text((int)width-88,y+20,"RUN",sub_color(),1);
+}
+static void window_bar(const char*title,const char*hint){
+    fill_rect(18,58,(int)width-36,(int)height-128,panel_color());
+    fill_rect(18,58,(int)width-36,40,panel2_color());
+    text(34,72,title,text_color(),1);text_clip((int)width-260,72,hint,sub_color(),1,215);
+    fill_rect((int)width-62,66,30,24,danger_color());text((int)width-52,74,"X",0xFFFFFFu,1);
+}
+
+static void draw_icon(int x,int y,int type){
+    uint32_t a=accent_color(),s=sub_color();
+    fill_rect(x,y,52,52,panel2_color());
+    if(type==0){fill_rect(x+14,y+12,24,25,a);fill_rect(x+9,y+21,34,16,a);}
+    else if(type==1){fill_rect(x+10,y+10,32,32,a);text(x+18,y+17,"+",0xFFFFFFu,2);}
+    else if(type==2){fill_rect(x+11,y+9,30,34,0xFFFFFFu);fill_rect(x+15,y+14,22,2,a);fill_rect(x+15,y+21,22,2,a);fill_rect(x+15,y+28,16,2,a);}
+    else if(type==3){fill_rect(x+8,y+15,36,27,a);fill_rect(x+13,y+11,19,7,a);}
+    else if(type==4){fill_rect(x+11,y+10,30,34,0x101820u);text(x+16,y+19,"_",a,2);}
+    else if(type==5){stroke_rect(x+10,y+10,32,32,a);fill_rect(x+17,y+17,18,18,a);}
+    else {fill_rect(x+12,y+12,28,28,a);fill_rect(x+20,y+7,12,8,a);}
+    (void)s;
+}
+
+static void draw_start_menu(void){
+    int mw=430,mh=(int)height-76,x=12,y=(int)height-62-mh;
+    fill_rect(x+4,y+4,mw,mh,0x06090Du);fill_rect(x,y,mw,mh,panel_color());
+    text(x+22,y+20,"STEVEOS APPLICATIONS",text_color(),2);
+    text(x+22,y+48,"MINT-STYLE DESKTOP",sub_color(),1);
+    const char*names[]={"Web Browser","Calculator","Text Editor","File Manager","Image Viewer","Settings","Task Manager","Terminal","Calendar","Control Center","About SteveOS"};
+    const int ap[]={APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_IMAGE,APP_SETTINGS,APP_TASKS,APP_TERMINAL,APP_CALENDAR,APP_CONTROL,APP_ABOUT};
+    for(int i=0;i<11;i++){
+        int row=i%6,col=i/6,bx=x+18+col*196,by=y+70+row*55;
+        fill_rect(bx,by,180,45,(current_app==ap[i])?panel2_color():bg_color());
+        draw_icon(bx+5,by-4,i%7);text(bx+66,by+12,names[i],text_color(),1);
+    }
+    fill_rect(x+18,y+mh-80,mw-36,32,panel2_color());text(x+30,y+mh-70,"F1 WEB   F2 CALC   F3 NOTE   F4 FILES",sub_color(),1);
+}
+
 static void draw_desktop(void){
-    fill_rect(0,0,(int)width,(int)height,bg_color());topbar("DESKTOP");text(38,82,"WELCOME TO STEVEOS",text_color(),3);text(40,114,"NATIVE KERNEL DESKTOP",sub_color(),1);
-    int cw=width>=900?250:190,ch=78,g=14,x0=34,y0=150;const char*names[]={"CALCULATOR","NOTEPAD","FILES","SETTINGS","TASK MANAGER","TERMINAL","IMAGE VIEWER","ABOUT","SYSTEM"};const char*hints[]={"CALC","EDITOR","BROWSE","OPTIONS","PROCESSES","SHELL","PICTURES","CREDITS","HARDWARE"};
-    for(int i=0;i<9;i++){int col=i%3,row=i/3,x=x0+col*(cw+g),y=y0+row*(ch+g);fill_rect(x+3,y+4,cw,ch,0x050A12u);fill_rect(x,y,cw,ch,panel_color());fill_rect(x+12,y+11,40,40,panel2_color());fill_rect(x+23,y+19,18,24,0x5F7593u);text(x+62,y+17,names[i],text_color(),1);text(x+62,y+38,hints[i],sub_color(),1);}
-    fill_rect(34,(int)height-76,(int)width-68,44,panel2_color());text(50,(int)height-61,"F1 CALC F2 NOTE F3 FILES F4 SETTINGS F6 TASKS F7 TERMINAL",sub_color(),1);text(50,(int)height-41,"F8 ABOUT ESC DESKTOP CLICK",sub_color(),1);
+    panel();
+    text(28,72,"WELCOME",text_color(),3);
+    text(30,104,"A BIGGER NATIVE STEVEOS DESKTOP",sub_color(),1);
+    const char*names[]={"WEB BROWSER","CALCULATOR","TEXT EDITOR","FILE MANAGER","IMAGE VIEWER","SETTINGS","TASK MANAGER","TERMINAL","CALENDAR","CONTROL CENTER","ABOUT STEVEOS","APP LIBRARY"};
+    const int ap[]={APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_IMAGE,APP_SETTINGS,APP_TASKS,APP_TERMINAL,APP_CALENDAR,APP_CONTROL,APP_ABOUT,-1};
+    int cw=250,ch=80,g=14,x0=28,y0=132,cols=width>=1200?4:3;
+    for(int i=0;i<12;i++){
+        int col=i%cols,row=i/cols,x=x0+col*(cw+g),y=y0+row*(ch+g);
+        if(x+cw>(int)width-20)continue;
+        fill_rect(x+3,y+4,cw,ch,0x05080Bu);fill_rect(x,y,cw,ch,panel_color());
+        draw_icon(x+14,y+14,i%7);text(x+82,y+21,names[i],text_color(),1);
+        text(x+82,y+43,i==0?"REAL HTTP FIRMWARE BRIDGE":i==1?"INTEGER EXPRESSION ENGINE":i==2?"NVRAM TEXT EDITOR":i==3?"BOOT VOLUME EXPLORER":i==4?"BMP + BOOT IMAGE":i==5?"THEME + INPUT":i==6?"LIVE SYSTEM STATUS":i==7?"NATIVE COMMAND SHELL":i==8?"SYSTEM DATE + TIME":i==9?"HARDWARE CONTROL CENTER":i==10?"LICENSES + BUILD INFO":"ALL APPS",sub_color(),1);
+        if(ap[i]>=0)fill_rect(x+cw-24,y+17,7,7,(current_app==ap[i])?accent_color():panel2_color());
+    }
+    text(30,(int)height-82,"TRADITIONAL PANEL  •  KEYBOARD SHORTCUTS  •  NATIVE INPUT  •  MINT-INSPIRED VISUALS",sub_color(),1);
+    taskbar();
+    if(menu_open)draw_start_menu();
 }
-static uint64_t calc_input_value(void){uint64_t v=0;for(size_t i=0;i<calc_len;i++)v=v*10+(uint64_t)(calc_input[i]-'0');return v;}
-static void calc_apply_operator(char op){uint64_t b=calc_input_value();if(!calc_pending)calc_value=b;else if(calc_op=='+')calc_value+=b;else if(calc_op=='-')calc_value=calc_value>b?calc_value-b:0;else if(calc_op=='*')calc_value*=b;else if(calc_op=='/'&&b)calc_value/=b;calc_op=op;calc_pending=1;calc_len=0;calc_input[0]=0;}
-static void calc_equals(void){uint64_t b=calc_input_value();if(!calc_pending)calc_value=b;else if(calc_op=='+')calc_value+=b;else if(calc_op=='-')calc_value=calc_value>b?calc_value-b:0;else if(calc_op=='*')calc_value*=b;else if(calc_op=='/'&&b)calc_value/=b;calc_len=0;calc_input[0]=0;calc_pending=0;}
-static void calc_clear(void){calc_len=0;calc_input[0]=0;calc_value=0;calc_pending=0;calc_op=0;}
+
+static void calc_skip(void){while(calc_input[calc_len]==' ')calc_len++;}
+static int64_t parse_expr(const char**ps,int*ok);
+static int64_t parse_factor(const char**ps,int*ok){
+    const char*p=*ps;while(*p==' ')p++;
+    if(*p=='-'){p++;*ps=p;int64_t v=parse_factor(ps,ok);return -v;}
+    if(*p=='('){p++;*ps=p;int64_t v=parse_expr(ps,ok);p=*ps;while(*p==' ')p++;if(*p!=')'){*ok=0;return 0;}*ps=p+1;return v;}
+    if(*p<'0'||*p>'9'){*ok=0;return 0;}
+    int64_t v=0;while(*p>='0'&&*p<='9'){if(v>922337203685477580LL)*ok=0;v=v*10+(*p-'0');p++;}*ps=p;return v;
+}
+static int64_t parse_term(const char**ps,int*ok){
+    int64_t v=parse_factor(ps,ok);while(*ok){const char*p=*ps;while(*p==' ')p++;char op=*p;if(op!='*'&&op!='/')break;p++;*ps=p;int64_t r=parse_factor(ps,ok);if(!*ok)break;if(op=='*')v*=r;else{if(!r){*ok=0;break;}v/=r;}}return v;
+}
+static int64_t parse_expr(const char**ps,int*ok){
+    int64_t v=parse_term(ps,ok);while(*ok){const char*p=*ps;while(*p==' ')p++;char op=*p;if(op!='+'&&op!='-')break;p++;*ps=p;int64_t r=parse_term(ps,ok);if(!*ok)break;if(op=='+')v+=r;else v-=r;}return v;
+}
+static void calc_eval(void){
+    calc_input[calc_len]=0;const char*p=calc_input;int ok=1;int64_t v=parse_expr(&p,&ok);while(*p==' ')p++;if(!*p&&ok){calc_result=v;calc_has_result=1;}else calc_has_result=0;
+}
+
 static void draw_calc(void){
-    fill_rect(0,0,(int)width,(int)height,bg_color());topbar("CALCULATOR");fill_rect(38,88,(int)width-76,82,panel_color());if(calc_len)text(58,116,calc_input,text_color(),3);else number(58,116,calc_value,text_color(),3);
-    const char*keys[]={"7","8","9","/","4","5","6","*","1","2","3","-","0","C","=","+"};int bw=100,bh=54,g=12,x0=38,y0=195;
-    for(int i=0;i<16;i++){int x=x0+(i%4)*(bw+g),y=y0+(i/4)*(bh+g);fill_rect(x,y,bw,bh,panel_color());text(x+43,y+18,keys[i],text_color(),2);}text(38,490,"DIGITS + - * / ENTER = BACKSPACE C CLEAR",sub_color(),1);
+    window_bar("CALCULATOR","ENTER EVALUATES  BACKSPACE CLEARS");
+    fill_rect(38,114,(int)width-76,74,bg_color());stroke_rect(38,114,(int)width-76,74,panel2_color());
+    text(58,128,calc_input,text_color(),2);
+    if(calc_has_result){text(58,159,"=",accent_color(),1);s64_text(82,154,calc_result,text_color(),2);}
+    const char*keys[]={"7","8","9","/","4","5","6","*","1","2","3","-","0","(",")","+","C","=","."};
+    int bw=100,bh=46,g=10,cols=5,x0=38,y0=204;
+    for(int i=0;i<19;i++){int bx=x0+(i%cols)*(bw+g),by=y0+(i/cols)*(bh+g);fill_rect(bx,by,bw,bh,(i==18||i==17)?accent_dark():panel2_color());text(bx+42,by+13,keys[i],0xFFFFFFu,2);}
+    text(40,(int)height-98,"Supports +  -  *  /  parentheses and unary minus",sub_color(),1);taskbar();
 }
-static void draw_note(void){
-    fill_rect(0,0,(int)width,(int)height,bg_color());topbar("NOTEPAD");fill_rect(34,78,(int)width-68,(int)height-150,light_theme?0xFBFCFEu:0x182231u);int x=50,y=98;
-    for(size_t i=0;i<note_len&&y<(int)height-105;i++){char c=(char)note[i];if(c=='\n'){x=50;y+=16;continue;}glyph(x,y,c,light_theme?0x18202Bu:0xEAF0F6u,1);x+=6;if(x>(int)width-55){x=50;y+=16;}}
-    fill_rect(34,(int)height-62,(int)width-68,36,panel2_color());text(50,(int)height-49,"F5 SAVE",text_color(),1);text(115,(int)height-49,note_dirty?"UNSAVED":"SAVED",note_dirty?0xD8A654u:good_color(),1);text(220,(int)height-49,"ENTER NEW LINE BACKSPACE DELETE ARROWS",sub_color(),1);
+
+static void note_key(uint8_t s){
+    if(s==0x2A||s==0x36){shift_down=1;return;}if(s==0xAA||s==0xB6){shift_down=0;return;}
+    if(s==0x0E){if(note_cursor){for(size_t i=note_cursor-1;i<note_len;i++)note[i]=note[i+1];note_cursor--;note_len--;note_dirty=1;}return;}
+    if(s==0x1C){if(note_len<NOTE_MAX){for(size_t i=note_len;i>note_cursor;i--)note[i]=note[i-1];note[note_cursor++]='\n';note_len++;note_dirty=1;}return;}
+    if(s==0x4B){if(note_cursor)note_cursor--;return;}if(s==0x4D){if(note_cursor<note_len)note_cursor++;return;}
+    static const char lower[128]={0,27,'1','2','3','4','5','6','7','8','9','0','-','=',0,0,'q','w','e','r','t','y','u','i','o','p','[',']',0,0,'a','s','d','f','g','h','j','k','l',';','\'', '`',0,'\\','z','x','c','v','b','n','m',',','.','/',0,'*',0,' ',0};
+    if(s<128&&lower[s]&&note_len<NOTE_MAX){char c=lower[s];if(shift_down&&c>='a'&&c<='z')c=(char)(c-'a'+'A');if(shift_down&&c=='1')c='!';else if(shift_down&&c=='2')c='@';else if(shift_down&&c=='3')c='#';else if(shift_down&&c=='4')c='$';else if(shift_down&&c=='5')c='%';else if(shift_down&&c=='6')c='^';else if(shift_down&&c=='7')c='&';else if(shift_down&&c=='8')c='*';else if(shift_down&&c=='9')c='(';else if(shift_down&&c=='0')c=')';else if(shift_down&&c==';')c=':';else if(shift_down&&c=='\'')c='"';for(size_t i=note_len;i>note_cursor;i--)note[i]=note[i-1];note[note_cursor++]=(uint8_t)c;note_dirty=1;}
 }
-static uint32_t read32le(const uint8_t*p){return(uint32_t)p[0]|((uint32_t)p[1]<<8)|((uint32_t)p[2]<<16)|((uint32_t)p[3]<<24);} static uint16_t read16le(const uint8_t*p){return(uint16_t)p[0]|((uint16_t)p[1]<<8);}
-static void draw_builtin_image(void){const uint8_t*r=_binary_build_boot_raw_start,*e=_binary_build_boot_raw_end;if((size_t)(e-r)<8)return;uint32_t w=*(const uint32_t*)r,h=*(const uint32_t*)(r+4);const uint8_t*p=r+8;if(!w||!h||(size_t)w*h*4+8>(size_t)(e-r))return;uint32_t dw=520,dh=(uint64_t)h*dw/w;if(dh>470){dh=470;dw=(uint64_t)w*dh/h;}int ox=((int)width-(int)dw)/2,oy=92;for(uint32_t y=0;y<dh;y++){uint32_t sy=(uint64_t)y*h/dh;for(uint32_t x=0;x<dw;x++){uint32_t sx=(uint64_t)x*w/dw;const uint8_t*v=p+((size_t)sy*w+sx)*4;put_pixel(ox+(int)x,oy+(int)y,0xFF000000u|(uint32_t)v[2]|((uint32_t)v[1]<<8)|((uint32_t)v[0]<<16));}}}
-static void draw_bmp(const uint8_t*d,size_t len){if(len<54||d[0]!='B'||d[1]!='M')return;uint32_t off=read32le(d+10),w=read32le(d+18),hraw=read32le(d+22);int32_t h=(int32_t)hraw;uint16_t planes=read16le(d+26),bpp=read16le(d+28);if(!w||!h||planes!=1||(bpp!=24&&bpp!=32))return;uint32_t ah=(uint32_t)(h<0?-h:h),row=((w*bpp+31)/32)*4;if((uint64_t)off+(uint64_t)row*ah>len)return;uint32_t dw=520,dh=(uint64_t)ah*dw/w;if(dh>470){dh=470;dw=(uint64_t)w*dh/ah;}int ox=((int)width-(int)dw)/2,oy=92,bytes=bpp/8;for(uint32_t y=0;y<dh;y++){uint32_t sy=(uint64_t)y*ah/dh;if(h>0)sy=ah-1-sy;for(uint32_t x=0;x<dw;x++){uint32_t sx=(uint64_t)x*w/dw;const uint8_t*v=d+off+(uint64_t)sy*row+(uint64_t)sx*bytes;put_pixel(ox+(int)x,oy+(int)y,0xFF000000u|(uint32_t)v[2]|((uint32_t)v[1]<<8)|((uint32_t)v[0]<<16));}}}
-static void draw_image(void){fill_rect(0,0,(int)width,(int)height,bg_color());topbar("IMAGE VIEWER");if(selected_file>=0&&boot_files&&(uint64_t)selected_file<boot_info->boot_file_count){STEVEOS_BOOT_FILE*f=&boot_files[selected_file];char name[64];file_name(f,name,sizeof(name));text(30,74,name,sub_color(),1);if(f->data&&f->size){const uint8_t*d=(const uint8_t*)(uintptr_t)f->data;if(f->size>=2&&d[0]=='B'&&d[1]=='M')draw_bmp(d,(size_t)f->size);else draw_builtin_image();}else draw_builtin_image();}else draw_builtin_image();text(30,(int)height-44,"ESC BACK TO FILES BMP + BUILT-IN IMAGE",sub_color(),1);}
-static void draw_files(void){fill_rect(0,0,(int)width,(int)height,bg_color());topbar("FILE EXPLORER");fill_rect(30,76,(int)width-60,38,panel2_color());text(46,89,"COMPUTER / BOOT VOLUME",text_color(),1);int shown=0;for(uint64_t i=(uint64_t)file_scroll;i<boot_info->boot_file_count&&shown<9;i++,shown++){STEVEOS_BOOT_FILE*f=&boot_files[i];char name[64];file_name(f,name,sizeof(name));int y=130+shown*45;fill_rect(30,y,(int)width-60,36,selected_file==(int)i?0x4F6582u:panel_color());text(46,y+11,f->attributes&0x10?"DIR":(f->kind==1?"IMG":(f->kind==2?"TXT":"FILE")),text_color(),1);text(92,y+11,name,text_color(),1);number(540,y+11,f->size,sub_color(),1);}text(34,(int)height-48,"UP DOWN SCROLL ENTER OPEN CLICK FILE ESC",sub_color(),1);}
-static void draw_settings(void){fill_rect(0,0,(int)width,(int)height,bg_color());topbar("SETTINGS");text(38,84,"APPEARANCE",text_color(),2);fill_rect(34,120,(int)width-68,54,panel_color());text(52,137,"THEME",text_color(),1);text(330,137,light_theme?"LIGHT":"DARK",sub_color(),1);fill_rect(34,192,(int)width-68,54,panel_color());text(52,209,"POINTER SCALE",text_color(),1);number(330,209,pointer_scale,text_color(),1);text(52,223,"LEFT RIGHT TO CHANGE",sub_color(),1);fill_rect(34,264,(int)width-68,96,panel_color());text(52,281,"INPUT DEVICES",text_color(),1);text(52,304,native_usb_mouse_present()?"USB HID MOUSE ACTIVE":"USB HID MOUSE OFF",sub_color(),1);text(52,324,native_i2c_hid_present()?"I2C HID TOUCHPAD ACTIVE":"I2C HID TOUCHPAD OFF",sub_color(),1);text(52,405,"F5 SAVE SETTINGS TO NVRAM",text_color(),1);}
-static void draw_tasks(void){fill_rect(0,0,(int)width,(int)height,bg_color());topbar("TASK MANAGER");text(34,82,"STEVEOS COMPONENTS",text_color(),2);const char*names[]={"KERNEL MAIN LOOP","FRAMEBUFFER","PS2 KEYBOARD","USB HID MOUSE","I2C HID TOUCHPAD","NVRAM","BOOT FILE SNAPSHOT"};for(int i=0;i<7;i++){int y=122+i*44;int active=i<3||(i==3&&native_usb_mouse_present())||(i==4&&native_i2c_hid_present())||i>4;fill_rect(30,y,(int)width-60,34,panel_color());text(46,y+11,names[i],text_color(),1);text((int)width-140,y+11,active?"ACTIVE":"OFF",active?good_color():sub_color(),1);}fill_rect(30,444,(int)width-60,76,panel2_color());text(46,460,"MEMORY",sub_color(),1);number(46,482,total_memory/1024/1024,text_color(),2);text(106,485,"MB",sub_color(),1);text(250,460,"LARGEST REGION",sub_color(),1);number(250,482,largest_region/1024/1024,text_color(),2);text(346,485,"MB",sub_color(),1);}
-static void terminal_add(const char*s){if(terminal_count<8){size_t i=0;while(s[i]&&i<63){terminal_lines[terminal_count][i]=s[i];i++;}terminal_lines[terminal_count][i]=0;terminal_count++;}else{for(int r=1;r<8;r++)for(int c=0;c<64;c++)terminal_lines[r-1][c]=terminal_lines[r][c];size_t i=0;while(s[i]&&i<63){terminal_lines[7][i]=s[i];i++;}terminal_lines[7][i]=0;}}
-static int str_eq(const char*a,const char*b){while(*a&&*b&&*a==*b){a++;b++;}return *a==0&&*b==0;}
-static void terminal_exec(void){terminal_input[terminal_len]=0;if(str_eq(terminal_input,"HELP"))terminal_add("HELP MEM APPS CLEAR REBOOT HALT");else if(str_eq(terminal_input,"MEM"))terminal_add("OPEN TASK MANAGER FOR MEMORY");else if(str_eq(terminal_input,"APPS"))terminal_add("F1 F2 F3 F4 F6 F7 F8");else if(str_eq(terminal_input,"CLEAR"))terminal_count=0;else if(str_eq(terminal_input,"REBOOT"))native_reboot();else if(str_eq(terminal_input,"HALT"))native_halt();else if(terminal_len)terminal_add("UNKNOWN COMMAND");terminal_len=0;terminal_input[0]=0;}
-static void draw_terminal(void){fill_rect(0,0,(int)width,(int)height,bg_color());topbar("TERMINAL");for(int i=0;i<8;i++)text(32,82+i*24,terminal_lines[i],text_color(),1);fill_rect(28,(int)height-62,(int)width-56,38,panel2_color());text(40,(int)height-50,terminal_input,text_color(),1);}
-static void draw_about(void){fill_rect(0,0,(int)width,(int)height,bg_color());topbar("ABOUT");text(38,92,"STEVEOS",text_color(),3);text(40,132,"NATIVE KERNEL DESKTOP",sub_color(),1);text(40,174,"UEFI GOP FRAMEBUFFER",text_color(),1);text(40,202,"X86-64 GDT IDT PAGING",sub_color(),1);text(40,226,"PS2 USB HID I2C HID INPUT",sub_color(),1);text(40,250,"PERSISTENT NVRAM NOTES SETTINGS",sub_color(),1);fill_rect(36,300,(int)width-72,130,panel_color());text(54,322,"MINT-Y SOURCE",text_color(),1);text(54,344,"linuxmint/mint-y-icons",sub_color(),1);text(54,366,"OPEN SOURCE ASSET REFERENCE",sub_color(),1);text(54,388,"SEE THIRD_PARTY.MD",sub_color(),1);}
-static void render(void){switch(current_app){case APP_DESKTOP:draw_desktop();break;case APP_CALC:draw_calc();break;case APP_NOTE:draw_note();break;case APP_FILES:draw_files();break;case APP_IMAGE:draw_image();break;case APP_SETTINGS:draw_settings();break;case APP_TASKS:draw_tasks();break;case APP_TERMINAL:draw_terminal();break;default:draw_about();break;}present();}
-static void open_card(uint32_t x,uint32_t y){int cw=width>=900?250:190,ch=78,g=14,x0=34,y0=150;for(int i=0;i<9;i++){int col=i%3,row=i/3;if(hit(x,y,x0+col*(cw+g),y0+row*(ch+g),cw,ch)){if(i==0)current_app=APP_CALC;else if(i==1)current_app=APP_NOTE;else if(i==2)current_app=APP_FILES;else if(i==3)current_app=APP_SETTINGS;else if(i==4||i==8)current_app=APP_TASKS;else if(i==5)current_app=APP_TERMINAL;else if(i==6)current_app=APP_IMAGE;else current_app=APP_ABOUT;selected_file=-1;render();return;}}}
-static void handle_click(uint32_t x,uint32_t y){
-    if(current_app==APP_DESKTOP){open_card(x,y);return;}
-    if(current_app==APP_CALC){int bw=100,bh=54,g=12,x0=38,y0=195;const char*k="789/456*123-0C=+";for(int i=0;i<16;i++){int bx=x0+(i%4)*(bw+g),by=y0+(i/4)*(bh+g);if(hit(x,y,bx,by,bw,bh)){char q=k[i];if(q>='0'&&q<='9'&&calc_len<CALC_MAX){calc_input[calc_len++]=q;calc_input[calc_len]=0;}else if(q=='C')calc_clear();else if(q=='=')calc_equals();else calc_apply_operator(q);render();return;}}return;}
-    if(current_app==APP_FILES){for(int row=0;row<9;row++){uint64_t i=(uint64_t)file_scroll+row;if(i>=boot_info->boot_file_count)break;if(hit(x,y,30,130+row*45,(int)width-60,36)){selected_file=(int)i;STEVEOS_BOOT_FILE*f=&boot_files[i];if(f->kind==1)current_app=APP_IMAGE;else if(f->kind==2&&f->data)load_text_file(f);render();return;}}return;}
-    if(current_app==APP_SETTINGS){if(hit(x,y,34,120,(int)width-68,54)){light_theme^=1;}else if(hit(x,y,34,192,(int)width-68,54)){pointer_scale=pointer_scale>=4?1:pointer_scale+1;native_pointer_set_scale(pointer_scale);}render();}
+static void draw_editor(void){
+    window_bar("TEXT EDITOR",note_dirty?"UNSAVED  F5 SAVES":"SAVED  F5 SAVES");
+    fill_rect(38,110,(int)width-76,(int)height-214,bg_color());
+    int x=52,y=126;size_t line=0;for(size_t i=0;i<note_len&&y<(int)height-116;i++){char c=(char)note[i];if(c=='\n'){line++;x=52;y=126+(int)line*18;continue;}glyph(x,y,c,text_color(),1);x+=6;if(x>(int)width-65){line++;x=52;y=126+(int)line*18;}}
+    if(note_cursor==note_len&&y<(int)height-116)fill_rect(x,y,2,10,accent_color());
+    text(40,(int)height-98,"ARROWS MOVE  BACKSPACE DELETE  ENTER NEWLINE  F5 SAVE",sub_color(),1);taskbar();
 }
-static void note_key(uint8_t s){if(s==0x0e){if(note_cursor){for(size_t i=note_cursor-1;i<note_len;i++)note[i]=note[i+1];note_cursor--;note_len--;note_dirty=1;}return;}if(s==0x1c){if(note_len<NOTE_MAX){for(size_t i=note_len;i>note_cursor;i--)note[i]=note[i-1];note[note_cursor++]='\n';note_len++;note_dirty=1;}return;}if(s==0x4b){if(note_cursor)note_cursor--;return;}if(s==0x4d){if(note_cursor<note_len)note_cursor++;return;}static const char map[128]={0,27,'1','2','3','4','5','6','7','8','9','0','-','=',0,0,'q','w','e','r','t','y','u','i','o','p','[',']',0,0,'a','s','d','f','g','h','j','k','l',';','\'', '`',0,'\\','z','x','c','v','b','n','m',',','.','/',0,'*',0,' ',0};if(s<128&&map[s]&&note_len<NOTE_MAX){for(size_t i=note_len;i>note_cursor;i--)note[i]=note[i-1];note[note_cursor++]=(uint8_t)map[s];note_dirty=1;}}
+
+static void draw_files(void){
+    window_bar("FILE MANAGER","BOOT VOLUME SNAPSHOT");
+    fill_rect(38,110,220,(int)height-214,panel2_color());
+    text(56,128,"PLACES",sub_color(),1);
+    const char*places[]={"Computer","Boot Volume","Home","Documents","Pictures","Downloads"};
+    for(int i=0;i<6;i++){fill_rect(50,150+i*42,190,34,(i==1)?accent_dark():panel_color());text(66,161+i*42,places[i],i==1?0xFFFFFFu:text_color(),1);}
+    text(284,128,"NAME",sub_color(),1);text((int)width-240,128,"SIZE",sub_color(),1);
+    int shown=0;for(uint64_t i=(uint64_t)file_scroll;i<boot_info->boot_file_count&&shown<10;i++,shown++){
+        STEVEOS_BOOT_FILE*f=&boot_files[i];char name[64];file_name(f,name,sizeof(name));int y=150+shown*40;uint32_t c=selected_file==(int)i?accent_dark():panel_color();fill_rect(278,y,(int)width-316,32,c);text(294,y+10,name,selected_file==(int)i?0xFFFFFFu:text_color(),1);u64_text((int)width-236,y+10,f->size,sub_color(),1);text((int)width-150,y+10,(f->attributes&0x10)?"DIR":(f->kind==1?"IMG":(f->kind==2?"TXT":"FILE")),sub_color(),1);
+    }
+    text(40,(int)height-98,"CLICK OR ENTER TO OPEN TEXT/IMAGE FILES  UP/DOWN SCROLL",sub_color(),1);taskbar();
+}
+
+static uint16_t read16le(const uint8_t*d){return (uint16_t)d[0]|((uint16_t)d[1]<<8);}
+static uint32_t read32le(const uint8_t*d){return (uint32_t)d[0]|((uint32_t)d[1]<<8)|((uint32_t)d[2]<<16)|((uint32_t)d[3]<<24);}
+static void draw_bmp(const uint8_t*d,size_t len){
+    if(len<54||d[0]!='B'||d[1]!='M')return;uint32_t off=read32le(d+10),w=read32le(d+18),hr=read32le(d+22);int32_t h=(int32_t)hr;uint16_t planes=read16le(d+26),bpp=read16le(d+28);if(!w||!h||planes!=1||(bpp!=24&&bpp!=32))return;uint32_t ah=(uint32_t)(h<0?-h:h),row=((w*bpp+31)/32)*4;if((uint64_t)off+(uint64_t)row*ah>len)return;uint32_t dw=520,dh=(uint64_t)ah*dw/w;if(dh>430){dh=430;dw=(uint64_t)w*dh/ah;}int ox=((int)width-(int)dw)/2,oy=112,bytes=bpp/8;for(uint32_t y=0;y<dh;y++){uint32_t sy=(uint64_t)y*ah/dh;if(h>0)sy=ah-1-sy;for(uint32_t x=0;x<dw;x++){uint32_t sx=(uint64_t)x*w/dw;const uint8_t*v=d+off+(uint64_t)sy*row+(uint64_t)sx*bytes;put_pixel(ox+(int)x,oy+(int)y,0xFF000000u|(uint32_t)v[2]|((uint32_t)v[1]<<8)|((uint32_t)v[0]<<16));}}
+}
+static void draw_builtin_image(void){
+    const uint8_t*r=_binary_build_boot_raw_start,*e=_binary_build_boot_raw_end;if((size_t)(e-r)<8)return;uint32_t w=*(const uint32_t*)r,h=*(const uint32_t*)(r+4);const uint8_t*p=r+8;if(!w||!h||(size_t)w*h*4+8>(size_t)(e-r))return;uint32_t dw=520,dh=(uint64_t)h*dw/w;if(dh>430){dh=430;dw=(uint64_t)w*dh/h;}int ox=((int)width-(int)dw)/2,oy=112;for(uint32_t y=0;y<dh;y++){uint32_t sy=(uint64_t)y*h/dh;for(uint32_t x=0;x<dw;x++){uint32_t sx=(uint64_t)x*w/dw;const uint8_t*v=p+((size_t)sy*w+sx)*4;put_pixel(ox+(int)x,oy+(int)y,0xFF000000u|(uint32_t)v[2]|((uint32_t)v[1]<<8)|((uint32_t)v[0]<<16));}}
+}
+static void draw_image(void){
+    window_bar("IMAGE VIEWER","BMP + BUILT-IN BOOT IMAGE");
+    if(selected_file>=0&&boot_files&&(uint64_t)selected_file<boot_info->boot_file_count){STEVEOS_BOOT_FILE*f=&boot_files[selected_file];char n[64];file_name(f,n,sizeof(n));text(42,102,n,sub_color(),1);if(f->data&&f->size){const uint8_t*d=(const uint8_t*)(uintptr_t)f->data;if(f->size>=2&&d[0]=='B'&&d[1]=='M')draw_bmp(d,(size_t)f->size);else draw_builtin_image();}else draw_builtin_image();}else draw_builtin_image();
+    text(40,(int)height-98,"ESC BACK TO FILES",sub_color(),1);taskbar();
+}
+
+static char hexch(uint8_t v){return v<10?(char)('0'+v):(char)('A'+v-10);}
+static void status_text(char*out,size_t cap,uint32_t status){if(cap<2)return;int n=0;if(status==0){out[0]=0;return;}out[n++]='H';out[n++]='T';out[n++]='T';out[n++]='P';out[n++]=' ';out[n++]=(char)('0'+(status/100)%10);out[n++]=(char)('0'+(status/10)%10);out[n++]=(char)('0'+status%10);out[n]=0;if((size_t)n>=cap)out[cap-1]=0; (void)hexch;}
+static void append_text(char*out,size_t*len,size_t cap,char c){if(*len+1<cap){out[(*len)++]=c;out[*len]=0;}}
+static void entity_char(const char*p,size_t n,char*out,size_t*len){
+    if(n==5&&begins_ci(p,"amp;"))append_text(out,len,BROWSER_TEXT_MAX,'&');
+    else if(n==4&&begins_ci(p,"lt;"))append_text(out,len,BROWSER_TEXT_MAX,'<');
+    else if(n==4&&begins_ci(p,"gt;"))append_text(out,len,BROWSER_TEXT_MAX,'>');
+    else if(n==6&&begins_ci(p,"quot;"))append_text(out,len,BROWSER_TEXT_MAX,'"');
+    else if(n==5&&begins_ci(p,"nbsp;"))append_text(out,len,BROWSER_TEXT_MAX,' ');
+    else append_text(out,len,BROWSER_TEXT_MAX,'&');
+}
+static void resolve_url(const char*href,char*out,size_t cap){
+    if(!cap)return;out[0]=0;if(!href)return;
+    while(*href==' '||*href=='\t'||*href=='\n')href++;
+    size_t n=0;while(href[n]&&href[n]!='\"'&&href[n]!='\''&&href[n]!=' '&&href[n]!='\t'&&n+1<cap)n++;
+    if(!n||href[0]=='#'||begins_ci(href,"javascript:")||begins_ci(href,"mailto:"))return;
+    if(begins_ci(href,"http://")||begins_ci(href,"https://")){for(size_t i=0;i<n&&i+1<cap;i++)out[i]=href[i];out[n<cap?n:cap-1]=0;return;}
+    if(href[0]=='/'&&href[1]=='/'){
+        out[0]=browser_url[0]=='h'&&browser_url[4]=='s'?'h':'h';out[1]='t';out[2]='t';out[3]='p';out[4]=':';for(size_t i=0;i<n&&i+6<cap;i++)out[i+5]=href[i];out[n+5<cap?n+5:cap-1]=0;return;
+    }
+    const char*scheme_end=find_ci(browser_url,"://");size_t prefix=scheme_end?(size_t)(scheme_end-browser_url)+3:0;size_t authority=prefix;while(browser_url[authority]&&browser_url[authority]!='/'&&authority+1<BROWSER_URL_MAX)authority++;
+    if(href[0]=='/'){
+        size_t m=authority<n+prefix?authority:authority;for(size_t i=0;i<m&&i+1<cap;i++)out[i]=browser_url[i];for(size_t i=0;i<n&&m+i+1<cap;i++)out[m+i]=href[i];out[(m+n<cap)?m+n:cap-1]=0;return;
+    }
+    size_t base=prefix;for(size_t i=prefix;i<authority;i++){};for(size_t i=authority;i>prefix&&browser_url[i-1]!='/' ;i--)base=i-1;
+    for(size_t i=0;i<base&&i+1<cap;i++)out[i]=browser_url[i];if(base&&out[base-1]!='/'){out[base++]='/';}for(size_t i=0;i<n&&base+i+1<cap;i++)out[base+i]=href[i];out[(base+n<cap)?base+n:cap-1]=0;
+}
+static void parse_browser_html(void){
+    browser_text[0]=0;browser_title[0]=0;browser_link_count=0;size_t tl=0,i=0;int skip=0,in_a=0;size_t link_len=0;
+    while(i<(size_t)BROWSER_RAW_MAX&&browser_raw[i]){
+        if(browser_raw[i]=='<'){
+            size_t j=i+1;while(browser_raw[j]&&browser_raw[j]!='>'&&j-i<300)j++;if(!browser_raw[j])break;
+            const char*tag=browser_raw+i+1;while(*tag==' '||*tag=='/'){tag++;}char name[16];size_t tn=0;while(tag[tn]&&tag[tn]!=' '&&tag[tn]!='>'&&tag[tn]!='/'&&tn+1<sizeof(name)){char c=tag[tn];if(c>='A'&&c<='Z')c=(char)(c-'A'+'a');name[tn++]=c;}name[tn]=0;
+            if(ci_eq(name,"script")||ci_eq(name,"style")){if(tag>browser_raw+i+1&&tag[-1]=='/'){}else skip=1;}
+            if(ci_eq(name,"/script")||ci_eq(name,"/style"))skip=0;
+            if(ci_eq(name,"title")&&tag[0]!='/'){
+                const char*q=browser_raw+j+1;const char*end=find_ci(q,"</title>");if(end){size_t nn=0;while(q<end&&nn+1<sizeof(browser_title)){if(*q!='\n'&&*q!='\r')browser_title[nn++]=*q;q++;}browser_title[nn]=0;}
+            }
+            if(ci_eq(name,"a")&&tag[0]!='/'&&browser_link_count<BROWSER_LINKS){
+                const char*hp=find_ci(tag,"href");if(hp&&hp<browser_raw+j){hp+=5;while(*hp==' '||*hp=='=')hp++;if(*hp=='\"'||*hp=='\'')hp++;char u[BROWSER_LINK_MAX+1];resolve_url(hp,u,sizeof(u));if(u[0]){for(size_t k=0;k<sizeof(browser_link_urls[0])-1&&u[k];k++)browser_link_urls[browser_link_count][k]=u[k],browser_link_urls[browser_link_count][k+1]=0;in_a=1;link_len=0;browser_link_text[browser_link_count][0]=0;}}}
+            if(ci_eq(name,"/a")){if(in_a){in_a=0;if(browser_link_count<BROWSER_LINKS){if(!browser_link_text[browser_link_count][0]){browser_link_text[browser_link_count][0]='L';browser_link_text[browser_link_count][1]='I';browser_link_text[browser_link_count][2]='N';browser_link_text[browser_link_count][3]='K';browser_link_text[browser_link_count][4]=0;}browser_link_count++;}link_len=0;}}
+            if(!skip&&(ci_eq(name,"br")||ci_eq(name,"p")||ci_eq(name,"div")||ci_eq(name,"li")||ci_eq(name,"h1")||ci_eq(name,"h2")||ci_eq(name,"tr")||ci_eq(name,"hr")))append_text(browser_text,&tl,BROWSER_TEXT_MAX,'\n');
+            i=j+1;continue;
+        }
+        if(skip){i++;continue;}
+        if(browser_raw[i]=='&'){size_t j=i+1;while(browser_raw[j]&&browser_raw[j]!=';'&&j-i<12)j++;if(browser_raw[j]==';'){entity_char(browser_raw+i+1,j-i,BROWSER_TEXT_MAX?browser_text:&browser_text[0],&tl);if(in_a&&browser_link_count<BROWSER_LINKS&&link_len+1<47)browser_link_text[browser_link_count][link_len++]=browser_text[tl-1],browser_link_text[browser_link_count][link_len]=0;i=j+1;continue;}}
+        char c=browser_raw[i++];if(c=='\r')continue;if(c=='\n'){append_text(browser_text,&tl,BROWSER_TEXT_MAX,' ');if(in_a&&browser_link_count<BROWSER_LINKS&&link_len+1<47)browser_link_text[browser_link_count][link_len++]=' ';continue;}if(tl&&browser_text[tl-1]==' '&&c==' ')continue;append_text(browser_text,&tl,BROWSER_TEXT_MAX,c);if(in_a&&browser_link_count<BROWSER_LINKS&&link_len+1<47){browser_link_text[browser_link_count][link_len++]=c;browser_link_text[browser_link_count][link_len]=0;}
+    }
+    if(!browser_title[0]){size_t n=0;for(size_t k=0;browser_text[k]&&n+1<sizeof(browser_title)&&k<120;k++){if(browser_text[k]!='\n'&&browser_text[k]!='\r'){browser_title[n++]=browser_text[k];}}browser_title[n]=0;}
+}
+static int browser_fetch(void){
+    HTTPGET get=(HTTPGET)(uintptr_t)boot_info->uefi_http_get;if(!get){browser_status=0;browser_loaded=0;return 0;}
+    uint16_t u16[BROWSER_URL_MAX+2];size_t n=0;while(browser_url[n]&&n+1<sizeof(u16)/sizeof(u16[0])){u16[n]=(uint16_t)(unsigned char)browser_url[n];n++;}u16[n]=0;
+    uint64_t len=0;browser_raw[0]=0;browser_status=0;uint64_t st=get(u16,browser_raw,BROWSER_RAW_MAX-1,&len,&browser_status);if(st!=0||!len){browser_loaded=0;return 0;}if(len>=BROWSER_RAW_MAX)len=BROWSER_RAW_MAX-1;browser_raw[len]=0;parse_browser_html();browser_loaded=1;browser_scroll=0;return 1;
+}
+static void draw_browser(void){
+    window_bar("WEB BROWSER",browser_focus?"ADDRESS ACTIVE  ENTER LOAD  ESC HOME":"ENTER URL  1-8 FOLLOW LINKS");
+    fill_rect(34,106,(int)width-68,40,bg_color());stroke_rect(34,106,(int)width-68,40,browser_focus?accent_color():panel2_color());text(46,117,browser_url,text_color(),1);
+    char st[24];status_text(st,sizeof(st),browser_status);if(browser_status){text((int)width-100,118,st,good_color(),1);}
+    if(!browser_loaded){text(52,180,boot_info->uefi_http_get?"READY TO FETCH HTTP/HTTPS CONTENT":"FIRMWARE HTTP BRIDGE UNAVAILABLE",text_color(),2);text(52,216,"TYPE A DOMAIN SUCH AS HTTP://NEVERSL.COM/",sub_color(),1);text(52,246,"THE PAGE IS FETCHED BY THE UEFI NETWORK STACK.",sub_color(),1);}
+    else{
+        fill_rect(34,160,(int)width-310,(int)height-286,bg_color());text_clip(52,176,browser_title[0]?browser_title:"UNTITLED",accent_color(),2,(int)width-350);
+        int x=52,y=214,lines=0;const char*p=browser_text;while(*p&&lines<((int)height-330)/16){if(browser_scroll>0){/* scroll is handled by skipping lines below */}int used=0;if(browser_scroll>0){/* skip */}while(*p&&*p!='\n'&&used<((int)width-350)/6){glyph(x+used*6,y+lines*16,*p,text_color(),1);used++;p++;}while(*p&&*p!='\n')p++;if(*p=='\n')p++;lines++;}
+        fill_rect((int)width-286,160,252,(int)height-286,panel2_color());text( (int)width-270,178,"LINKS",sub_color(),1);for(int i=0;i<browser_link_count;i++){int yy=204+i*42;fill_rect((int)width-270,yy,220,32,panel_color());char num[2]={(char)('1'+i),0};text((int)width-258,yy+10,num,accent_color(),1);text_clip((int)width-238,yy+10,browser_link_text[i],text_color(),1,178);}
+    }
+    text(40,(int)height-98,"HTTP BROWSER  •  BACKSPACE EDITS ADDRESS  •  DIGITS 1-8 FOLLOW LINKS",sub_color(),1);taskbar();
+}
+
+static void terminal_add(const char*s){if(terminal_count<TERM_LINES){size_t i=0;while(s[i]&&i<63){terminal_lines[terminal_count][i]=s[i];i++;}terminal_lines[terminal_count][i]=0;terminal_count++;}else{for(int r=1;r<TERM_LINES;r++)for(int c=0;c<64;c++)terminal_lines[r-1][c]=terminal_lines[r][c];size_t i=0;while(s[i]&&i<63){terminal_lines[TERM_LINES-1][i]=s[i];i++;}terminal_lines[TERM_LINES-1][i]=0;}}
+static void terminal_exec(void){
+    terminal_input[terminal_len]=0;
+    if(str_eq(terminal_input,"HELP"))terminal_add("HELP MEM APPS VERSION BROWSE CLEAR REBOOT HALT DATE");
+    else if(str_eq(terminal_input,"MEM"))terminal_add("TASKS SHOW LIVE MEMORY TOTAL AND LARGEST REGION");
+    else if(str_eq(terminal_input,"APPS"))terminal_add("WEB CALC NOTE FILES IMAGE SETTINGS TASKS TERM DATE CONTROL ABOUT");
+    else if(str_eq(terminal_input,"VERSION"))terminal_add("STEVEOS NATIVE DESKTOP 0.9");
+    else if(str_eq(terminal_input,"DATE"))terminal_add("OPEN CALENDAR FOR FIRMWARE CLOCK");
+    else if(str_eq(terminal_input,"BROWSE")){current_app=APP_BROWSER;browser_focus=1;mark_dirty();}
+    else if(begins_ci(terminal_input,"BROWSE ")){size_t i=7;while(terminal_input[i]==' ')i++;size_t n=0;browser_url[0]=0;if(!begins_ci(terminal_input+i,"http://")&&!begins_ci(terminal_input+i,"https://")){const char*p="http://";while(*p)browser_url[n++]=*p++;}while(terminal_input[i]&&n+1<BROWSER_URL_MAX)browser_url[n++]=terminal_input[i++];browser_url[n]=0;current_app=APP_BROWSER;browser_focus=0;browser_fetch();mark_dirty();}
+    else if(str_eq(terminal_input,"CLEAR"))terminal_count=0;else if(str_eq(terminal_input,"REBOOT"))native_reboot();else if(str_eq(terminal_input,"HALT"))native_halt();else if(terminal_len)terminal_add("UNKNOWN COMMAND");terminal_len=0;terminal_input[0]=0;
+}
+static void draw_terminal(void){window_bar("TERMINAL","NATIVE SHELL  TYPE HELP");for(int i=0;i<TERM_LINES;i++)text(42,116+i*21,terminal_lines[i],text_color(),1);fill_rect(38,(int)height-150,(int)width-76,34,panel2_color());text(48,(int)height-141,">",accent_color(),1);text(62,(int)height-141,terminal_input,text_color(),1);text(40,(int)height-98,"ENTER RUNS COMMAND  BACKSPACE EDITS",sub_color(),1);taskbar();}
+
+static void draw_tasks(void){
+    window_bar("TASK MANAGER","SYSTEM MONITOR");text(42,116,"PROCESS",sub_color(),1);text(250,116,"STATUS",sub_color(),1);text(390,116,"MEMORY",sub_color(),1);text(540,116,"SOURCE",sub_color(),1);
+    const char*n[]={"kernel-main","desktop-shell","framebuffer","keyboard","usb-hid","i2c-hid","firmware-http","nvram","boot-files"};
+    const char*s[]={"RUNNING","RUNNING","RUNNING", "RUNNING",native_usb_mouse_present()?"ACTIVE":"OFF",native_i2c_hid_present()?"ACTIVE":"OFF",boot_info->uefi_http_get?"READY":"OFF","READY","SNAPSHOT"};
+    for(int i=0;i<9;i++){int y=132+i*34;fill_rect(40,y,(int)width-80,26,(i%2)?panel_color():bg_color());text(52,y+8,n[i],text_color(),1);text(250,y+8,s[i],(i==4&&native_usb_mouse_present())||i==6?good_color():sub_color(),1);fill_rect(390,y+6,90,12,panel2_color());fill_rect(390,y+6,(i==1?72:i==0?64:i==2?38:18),12,accent_color());text(540,y+8,i==6?"HTTP BRIDGE":i==5?"TOUCHPAD":"NATIVE",sub_color(),1);}
+    fill_rect(40,456,(int)width-80,70,panel2_color());text(56,472,"CONVENTIONAL MEMORY",sub_color(),1);u64_text(56,493,total_memory/1024/1024,text_color(),2);text(118,496,"MB",sub_color(),1);text(220,472,"LARGEST FREE REGION",sub_color(),1);u64_text(220,493,largest_region/1024/1024,text_color(),2);text(282,496,"MB",sub_color(),1);text(40,(int)height-98,"LIVE COMPONENT VIEW  •  INPUT DRIVERS  •  NETWORK BRIDGE",sub_color(),1);taskbar();
+}
+
+static void draw_settings(void){
+    window_bar("SYSTEM SETTINGS","F5 SAVES SETTINGS");text(42,116,"PERSONALIZATION",accent_color(),1);
+    fill_rect(42,136,(int)width-84,54,light_theme?panel2_color():panel_color());text(58,154,"THEME",text_color(),1);text((int)width-190,154,light_theme?"LIGHT":"DARK",accent_color(),1);
+    fill_rect(42,202,(int)width-84,54,panel_color());text(58,220,"POINTER SCALE",text_color(),1);u64_text((int)width-190,220,pointer_scale,accent_color(),1);text(58,238,"1 TO 4",sub_color(),1);
+    text(42,290,"INPUT",accent_color(),1);fill_rect(42,308,(int)width-84,92,panel_color());text(58,326,native_usb_mouse_present()?"USB HID MOUSE ACTIVE":"USB HID MOUSE OFF",text_color(),1);text(58,348,native_i2c_hid_present()?"I2C HID TOUCHPAD ACTIVE":"I2C HID TOUCHPAD OFF",sub_color(),1);text(58,370,"NATIVE PS/2 KEYBOARD ACTIVE",sub_color(),1);
+    text(42,430,"NETWORK",accent_color(),1);fill_rect(42,448,(int)width-84,78,panel_color());text(58,466,boot_info->uefi_http_get?"UEFI HTTP SERVICE AVAILABLE":"UEFI HTTP SERVICE UNAVAILABLE",text_color(),1);text(58,488,"BROWSER USES FIRMWARE DNS + HTTP STACK",sub_color(),1);
+    text(42,(int)height-98,"CLICK THEME/POINTER ROWS  •  F5 SAVE TO NVRAM",sub_color(),1);taskbar();
+}
+
+static void draw_calendar(void){
+    window_bar("CALENDAR","FIRMWARE REAL-TIME CLOCK");EFI_TIME_STEV t={0};GETTIME gt=(GETTIME)(uintptr_t)boot_info->uefi_get_time;if(gt)gt(&t,NULL);if(!t.year){text(54,132,"FIRMWARE CLOCK UNAVAILABLE",danger_color(),2);taskbar();return;}
+    char date[32];date[0]=(char)('0'+(t.day/10));date[1]=(char)('0'+t.day%10);date[2]='/';date[3]=(char)('0'+(t.month/10));date[4]=(char)('0'+t.month%10);date[5]='/';date[6]=(char)('0'+(t.year/1000)%10);date[7]=(char)('0'+(t.year/100)%10);date[8]=(char)('0'+(t.year/10)%10);date[9]=(char)('0'+t.year%10);date[10]=0;
+    char time[16];time[0]=(char)('0'+(t.hour/10));time[1]=(char)('0'+t.hour%10);time[2]=':';time[3]=(char)('0'+(t.minute/10));time[4]=(char)('0'+t.minute%10);time[5]=':';time[6]=(char)('0'+(t.second/10));time[7]=(char)('0'+t.second%10);time[8]=0;
+    text(54,130,date,text_color(),3);text(54,186,time,accent_color(),3);text(54,246,"CURRENT FIRMWARE DATE AND TIME",sub_color(),1);
+    const char*days[]={"MON","TUE","WED","THU","FRI","SAT","SUN"};for(int i=0;i<7;i++)text(52+i*74,302,days[i],sub_color(),1);for(int r=0;r<5;r++)for(int c=0;c<7;c++){int num=r*7+c+1;fill_rect(46+c*74,330+r*42,58,32,num==t.day?accent_dark():panel2_color());u64_text(67+c*74,340,(uint64_t)num,num==t.day?0xFFFFFFu:text_color(),1);}taskbar();
+}
+
+static void draw_control(void){
+    window_bar("CONTROL CENTER","HARDWARE + SERVICES");
+    const char*names[]={"Display","Input Devices","Network","Storage","Memory","Firmware","Boot Volume","Open-Source Components"};
+    for(int i=0;i<8;i++){int col=i%2,row=i/2,x=42+col*300,y=114+row*76;fill_rect(x,y,280,60,panel_color());text(x+18,y+14,names[i],text_color(),1);text(x+18,y+35,i==0?"UEFI GOP FRAMEBUFFER":i==1?(native_usb_mouse_present()?"USB MOUSE ACTIVE":"PS2/TOUCHPAD INPUT"):i==2?(boot_info->uefi_http_get?"HTTP READY":"NO HTTP"):i==3?"BOOT FILE SNAPSHOT":i==4?"RAM MAP AVAILABLE":i==5?"RUNTIME SERVICES":i==6?"FAT BOOT VOLUME":"MINT-Y + CINNAMON REFERENCES",sub_color(),1);}
+    text(42,(int)height-98,"CENTRAL VIEW OF STEVEOS HARDWARE AND OPEN-SOURCE INSPIRATION",sub_color(),1);taskbar();
+}
+
+static void draw_about(void){
+    window_bar("ABOUT STEVEOS","NATIVE X86-64 DESKTOP");text(44,122,"STEVEOS",accent_color(),3);text(46,162,"NATIVE KERNEL DESKTOP 0.9",text_color(),1);text(46,190,"UEFI GOP • GDT • IDT • PAGING • PS2 • USB HID • I2C HID",sub_color(),1);text(46,216,"NATIVE APPS • NVRAM SETTINGS • TEXT EDITOR • HTTP BROWSER",sub_color(),1);
+    fill_rect(44,254,(int)width-88,150,panel2_color());text(62,274,"LINUX MINT INSPIRATION",text_color(),1);text(62,300,"TRADITIONAL DESKTOP / PANEL / MENU PATTERNS",sub_color(),1);text(62,324,"MINT-Y ICON THEME REFERENCE: linuxmint/mint-y-icons",sub_color(),1);text(62,348,"CINNAMON PROJECT REFERENCE: linuxmint/cinnamon",sub_color(),1);text(62,372,"SEE THIRD_PARTY.MD FOR LICENSING AND ATTRIBUTION.",sub_color(),1);
+    text(44,(int)height-98,"STEVEOS IS A FREESTANDING PROJECT, NOT A LINUX MINT DERIVATIVE",sub_color(),1);taskbar();
+}
+
+static void launch_app(int app){menu_open=0;if(app>=0)current_app=app;selected_file=-1;browser_focus=app==APP_BROWSER?1:0;mark_dirty();}
+static void app_click(uint32_t x,uint32_t y){
+    if(current_app==APP_CALC){int bw=100,bh=46,g=10,cols=5,x0=38,y0=204;const char*keys[]={"7","8","9","/","4","5","6","*","1","2","3","-","0","(",")","+","C","=","."};for(int i=0;i<19;i++){int bx=x0+(i%cols)*(bw+g),by=y0+(i/cols)*(bh+g);if(hit(x,y,bx,by,bw,bh)){char c=keys[i][0];if(c=='C'){calc_len=0;calc_input[0]=0;calc_has_result=0;}else if(c=='=')calc_eval();else if(calc_len<CALC_MAX){calc_input[calc_len++]=c;calc_input[calc_len]=0;calc_has_result=0;}mark_dirty();return;}}}
+    else if(current_app==APP_FILES){for(int row=0;row<10;row++){uint64_t i=(uint64_t)file_scroll+row;if(i>=boot_info->boot_file_count)break;if(hit(x,y,278,150+row*40,(int)width-316,32)){selected_file=(int)i;STEVEOS_BOOT_FILE*f=&boot_files[i];if(f->kind==1)current_app=APP_IMAGE;else if(f->kind==2&&f->data)load_text_file(f);mark_dirty();return;}}}
+    else if(current_app==APP_SETTINGS){if(hit(x,y,42,136,(int)width-84,54))light_theme^=1;else if(hit(x,y,42,202,(int)width-84,54)){pointer_scale=pointer_scale>=4?1:pointer_scale+1;native_pointer_set_scale(pointer_scale);mark_dirty();}}
+    else if(current_app==APP_BROWSER){if(hit(x,y,34,106,(int)width-68,40)){browser_focus=1;mark_dirty();}else{for(int i=0;i<browser_link_count;i++)if(hit(x,y,(int)width-270,204+i*42,220,32)){size_t n=0;while(browser_link_urls[i][n]&&n+1<BROWSER_URL_MAX)browser_url[n]=browser_link_urls[i][n],n++;browser_url[n]=0;browser_focus=0;browser_fetch();mark_dirty();return;}}}
+    else if(current_app==APP_DESKTOP){if(hit(x,y,0,(int)height-54,76,54)){menu_open^=1;mark_dirty();return;}int h=54;for(int i=0;i<6;i++)if(hit(x,y,84+i*72,(int)height-h,64,38)){launch_app((int[]){APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_TERMINAL,APP_SETTINGS}[i]);return;}int cw=250,ch=80,g=14,x0=28,y0=132,cols=width>=1200?4:3;for(int i=0;i<12;i++){int col=i%cols,row=i/cols,bx=x0+col*(cw+g),by=y0+row*(ch+g);if(hit(x,y,bx,by,cw,ch)){if(i==11)menu_open=1;else launch_app((int[]){APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_IMAGE,APP_SETTINGS,APP_TASKS,APP_TERMINAL,APP_CALENDAR,APP_CONTROL,APP_ABOUT,APP_DESKTOP}[i]);return;}}}
+    else if(current_app==APP_ABOUT||current_app==APP_CONTROL||current_app==APP_TASKS||current_app==APP_EDITOR||current_app==APP_TERMINAL||current_app==APP_IMAGE||current_app==APP_CALENDAR){if(hit(x,y,(int)width-62,66,30,24)){current_app=APP_DESKTOP;mark_dirty();return;}if(y>(uint32_t)height-54&&x<76){current_app=APP_DESKTOP;menu_open=1;mark_dirty();return;}}
+}
+static void menu_click(uint32_t x,uint32_t y){int mw=430,mh=(int)height-76,mx=12,my=(int)height-62-mh;if(!hit(x,y,mx,my,mw,mh)){menu_open=0;mark_dirty();return;}for(int i=0;i<11;i++){int row=i%6,col=i/6,bx=mx+18+col*196,by=my+70+row*55;if(hit(x,y,bx,by,180,45)){launch_app((int[]){APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_IMAGE,APP_SETTINGS,APP_TASKS,APP_TERMINAL,APP_CALENDAR,APP_CONTROL,APP_ABOUT}[i]);return;}}}
+
+static char key_char(uint8_t s){
+    static const char m[128]={0,27,'1','2','3','4','5','6','7','8','9','0','-','=',0,0,'q','w','e','r','t','y','u','i','o','p','[',']',0,0,'a','s','d','f','g','h','j','k','l',';','\'', '`',0,'\\','z','x','c','v','b','n','m',',','.','/',0,'*',0,' ',0};return s<128?m[s]:0;
+}
+static char shifted(char c){if(c>='a'&&c<='z')return(char)(c-'a'+'A');if(c>='0'&&c<='9'){const char*s=")!@#$%^&*(";return s[c-'0'];}if(c=='-')return'_';if(c=='=')return'+';if(c=='[')return'{';if(c==']')return'}';if(c==';')return':';if(c=='\'')return'"';if(c==',')return'<';if(c=='.')return'>';if(c=='/')return'?';if(c=='\\')return'|';return c;}
+static void browser_key(uint8_t s){
+    if(s==0x2A||s==0x36){shift_down=1;return;}if(s==0xAA||s==0xB6){shift_down=0;return;}
+    if(s==0x1C){if(browser_focus){if(browser_url[0])browser_fetch();browser_focus=0;}return;}
+    if(s==0x0E){if(browser_focus){size_t n=0;while(browser_url[n])n++;if(n){browser_url[n-1]=0;}}return;}
+    if(s==0x01){browser_focus=0;return;}
+    if(!browser_focus&&s>1&&s<10&&s-2<browser_link_count){int i=s-2;size_t n=0;while(browser_link_urls[i][n]&&n+1<BROWSER_URL_MAX)browser_url[n]=browser_link_urls[i][n],n++;browser_url[n]=0;browser_fetch();return;}
+    char c=key_char(s);if(browser_focus&&c&&browser_url[0]&&((c>='A'&&c<='Z')||(c>='a'&&c<='z')||(c>='0'&&c<='9')||c==':'||c=='/'||c=='.'||c=='-'||c=='_'||c=='?'||c=='&'||c=='=')){size_t n=0;while(browser_url[n])n++;if(n<BROWSER_URL_MAX){browser_url[n]=shift_down?shifted(c):c;browser_url[n+1]=0;}}
+}
+static void terminal_key(uint8_t s){if(s==0x2A||s==0x36){shift_down=1;return;}if(s==0xAA||s==0xB6){shift_down=0;return;}if(s==0x1C){terminal_exec();return;}if(s==0x0E){if(terminal_len)terminal_input[--terminal_len]=0;return;}char c=key_char(s);if(c&&terminal_len<TERM_MAX){terminal_input[terminal_len++]=shift_down?shifted(c):((c>='a'&&c<='z')?(char)(c-'a'+'A'):c);terminal_input[terminal_len]=0;}}
+static void calc_key(uint8_t s){if(s==0x1C){calc_eval();return;}if(s==0x0E){if(calc_len){calc_input[--calc_len]=0;calc_has_result=0;}return;}char c=key_char(s);if(c&&(c>='0'&&c<='9'||c=='+'||c=='-'||c=='*'||c=='/'||c=='('||c==')'))&&calc_len<CALC_MAX){calc_input[calc_len++]=c;calc_input[calc_len]=0;calc_has_result=0;}}
+
 static void handle_scan(uint8_t s){
-    if(!s||s&0x80)return;if(s==1){current_app=APP_DESKTOP;selected_file=-1;render();return;}if(s==0x3b){current_app=APP_CALC;render();return;}if(s==0x3c){current_app=APP_NOTE;render();return;}if(s==0x3d){current_app=APP_FILES;render();return;}if(s==0x3e){current_app=APP_SETTINGS;render();return;}if(s==0x3f){if(current_app==APP_NOTE)save_note();else if(current_app==APP_SETTINGS)save_settings();render();return;}if(s==0x40){current_app=APP_TASKS;render();return;}if(s==0x41){current_app=APP_TERMINAL;render();return;}if(s==0x42){current_app=APP_ABOUT;render();return;}
-    if(current_app==APP_CALC){static const char map[128]={0,27,'1','2','3','4','5','6','7','8','9','0','-','=',0,0,'q','w','e','r','t','y','u','i','o','p','[',']',0,0,'a','s','d','f','g','h','j','k','l',';','\'', '`',0,'\\','z','x','c','v','b','n','m',',','.','/',0,'*',0,' ',0};if(s==0x0e){if(calc_len){calc_len--;calc_input[calc_len]=0;}else calc_clear();}else if(s==0x1c)calc_equals();else if(s==0x2e)calc_clear();else if(s<128){char q=map[s];if(q>='0'&&q<='9'&&calc_len<CALC_MAX){calc_input[calc_len++]=q;calc_input[calc_len]=0;}else if(q=='+'||q=='-'||q=='*'||q=='/')calc_apply_operator(q);}render();return;}
-    if(current_app==APP_NOTE){note_key(s);render();return;}
-    if(current_app==APP_FILES){if(s==0x48&&file_scroll>0)file_scroll--;else if(s==0x50&&file_scroll+9<(int)boot_info->boot_file_count)file_scroll++;else if(s==0x1c&&selected_file>=0){STEVEOS_BOOT_FILE*f=&boot_files[selected_file];if(f->kind==1)current_app=APP_IMAGE;else if(f->kind==2&&f->data)load_text_file(f);}render();return;}
-    if(current_app==APP_IMAGE&&s==0x1c){current_app=APP_FILES;render();return;}
-    if(current_app==APP_SETTINGS){if(s==0x4b&&pointer_scale>1)pointer_scale--;else if(s==0x4d&&pointer_scale<4)pointer_scale++;else if(s==0x39)light_theme^=1;native_pointer_set_scale(pointer_scale);render();return;}
-    if(current_app==APP_TERMINAL){static const char map[128]={0,27,'1','2','3','4','5','6','7','8','9','0','-','=',0,0,'q','w','e','r','t','y','u','i','o','p','[',']',0,0,'a','s','d','f','g','h','j','k','l',';','\'', '`',0,'\\','z','x','c','v','b','n','m',',','.','/',0,'*',0,' ',0};if(s==0x0e&&terminal_len){terminal_len--;terminal_input[terminal_len]=0;}else if(s==0x1c)terminal_exec();else if(s<128&&map[s]&&terminal_len<TERM_MAX-1)terminal_input[terminal_len++]=map[s];render();return;}
+    if(!s)return;if(s==0x2A||s==0x36){shift_down=1;return;}if(s==0xAA||s==0xB6){shift_down=0;return;}
+    if(s&0x80)return;
+    if(s==0x3B){launch_app(APP_BROWSER);return;}if(s==0x3C){launch_app(APP_CALC);return;}if(s==0x3D){launch_app(APP_EDITOR);return;}if(s==0x3E){launch_app(APP_FILES);return;}if(s==0x3F){if(current_app==APP_EDITOR)save_note();else if(current_app==APP_SETTINGS)save_settings();mark_dirty();return;}if(s==0x40){launch_app(APP_TASKS);return;}if(s==0x41){launch_app(APP_TERMINAL);return;}if(s==0x42){launch_app(APP_CALENDAR);return;}if(s==0x43){launch_app(APP_CONTROL);return;}if(s==0x44){launch_app(APP_ABOUT);return;}
+    if(s==1){current_app=APP_DESKTOP;menu_open=0;mark_dirty();return;}
+    if(s==0x38&&current_app==APP_BROWSER){browser_focus=1;mark_dirty();return;}
+    if(menu_open){if(current_app==APP_DESKTOP){}menu_open=0;return;}
+    if(current_app==APP_EDITOR){note_key(s);return;}if(current_app==APP_BROWSER){browser_key(s);return;}if(current_app==APP_CALC){calc_key(s);return;}if(current_app==APP_TERMINAL){terminal_key(s);return;}
+    if(current_app==APP_FILES){if(s==0x48&&file_scroll>0)file_scroll--;else if(s==0x50&&file_scroll+10<(int)boot_info->boot_file_count)file_scroll++;else if(s==0x1C&&selected_file>=0){STEVEOS_BOOT_FILE*f=&boot_files[selected_file];if(f->kind==1)current_app=APP_IMAGE;else if(f->kind==2&&f->data)load_text_file(f);}mark_dirty();return;}
+    if(current_app==APP_SETTINGS){if(s==0x4B&&pointer_scale>1)pointer_scale--;else if(s==0x4D&&pointer_scale<4)pointer_scale++;native_pointer_set_scale(pointer_scale);mark_dirty();return;}
+    mark_dirty();
 }
-void steveos_desktop_init(STEVEOS_BOOT_INFO*b){boot_info=b;boot_files=(STEVEOS_BOOT_FILE*)(uintptr_t)b->boot_files;framebuffer=(uint32_t*)(uintptr_t)b->framebuffer_base;width=(uint32_t)b->width;height=(uint32_t)b->height;stride=(uint32_t)b->pixels_per_scanline;memory_stats();load_settings();load_note();init_backbuffer();}
-void steveos_desktop_run(STEVEOS_BOOT_INFO*b){(void)b;render();for(;;){uint8_t s=native_keyboard_read_scancode();uint8_t btn=native_pointer_buttons();if(btn&&!previous_buttons)handle_click(native_pointer_x(),native_pointer_y());previous_buttons=btn;if(s)handle_scan(s);__asm__ __volatile__("pause");}}
+
+static void render(void){
+    switch(current_app){case APP_DESKTOP:draw_desktop();break;case APP_BROWSER:draw_browser();break;case APP_CALC:draw_calc();break;case APP_EDITOR:draw_editor();break;case APP_FILES:draw_files();break;case APP_IMAGE:draw_image();break;case APP_SETTINGS:draw_settings();break;case APP_TASKS:draw_tasks();break;case APP_TERMINAL:draw_terminal();break;case APP_CALENDAR:draw_calendar();break;case APP_CONTROL:draw_control();break;default:draw_about();break;}
+    present();dirty=0;
+}
+
+void steveos_desktop_init(STEVEOS_BOOT_INFO *boot){
+    boot_info=boot;boot_files=(STEVEOS_BOOT_FILE*)(uintptr_t)boot->boot_files;framebuffer=(uint32_t*)(uintptr_t)boot->framebuffer_base;width=(uint32_t)boot->width;height=(uint32_t)boot->height;stride=(uint32_t)boot->pixels_per_scanline;memory_stats();init_backbuffer();load_settings();load_note();calc_input[0]=0;terminal_lines[0][0]=0;terminal_add("STEVEOS NATIVE SHELL");terminal_add("TYPE HELP FOR COMMANDS");browser_focus=0;dirty=1;}
+
+void steveos_desktop_run(STEVEOS_BOOT_INFO *boot){
+    (void)boot;uint32_t last_x=native_pointer_x(),last_y=native_pointer_y();uint8_t last_b=native_pointer_buttons();
+    for(;;){
+        uint8_t s=native_keyboard_read_scancode();if(s){handle_scan(s);dirty=1;}
+        uint32_t x=native_pointer_x(),y=native_pointer_y();uint8_t b=native_pointer_buttons();if(x!=last_x||y!=last_y||b!=last_b){dirty=1;last_x=x;last_y=y;last_b=b;}
+        if((b&1)&&!(previous_buttons&1)){if(menu_open)menu_click(x,y);else app_click(x,y);dirty=1;}previous_buttons=b;
+        if(dirty)render();
+        for(volatile int i=0;i<1800;i++)__asm__ __volatile__("pause");
+    }
+}
