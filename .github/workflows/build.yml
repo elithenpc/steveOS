@@ -10,6 +10,8 @@ jobs:
     steps:
       - name: Check out steveOS
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Install UEFI build tools
         run: |
