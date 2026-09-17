@@ -52,7 +52,7 @@ static STEVEOS_BOOT_FILE *boot_files;
 static uint32_t *framebuffer,*backbuffer;
 static uint32_t width,height,stride;
 static uint64_t total_memory,largest_region;
-static int current_app=APP_DESKTOP;
+static int current_app=APP_DESKTOP,previous_app=APP_DESKTOP;
 static int selected_file=-1,file_scroll,file_filter;
 static uint8_t previous_buttons,light_theme,pointer_scale=1,accent_id,note_dirty;
 static uint8_t menu_open,power_menu;
@@ -994,7 +994,10 @@ static void draw_about(void){
 
 static void launch_app(int app){
     menu_open=0;power_menu=0;
-    if(app>=0)current_app=app;
+    if(app>=0){
+        if(app!=current_app)previous_app=current_app;
+        current_app=app;
+    }
     selected_file=-1;
     browser_focus=app==APP_BROWSER?1:0;
     if(app==APP_BROWSER){browser_url[0]=0;browser_loaded=0;browser_scroll=0;browser_status=0;browser_raw[0]=0;browser_text[0]=0;browser_title[0]=0;browser_link_count=0;browser_history_count=0;browser_history_pos=0;browser_history_lock=0;browser_tab_count=1;browser_current_tab=0;browser_tabs[0][0]=0;}
@@ -1097,7 +1100,8 @@ static void handle_scan(uint8_t s){
     if(s==0x38){alt_down=1;return;}
     if(s==0xB8){alt_down=0;return;}
     if(s&0x80)return;
-    if(s==0x44){power_menu^=1;menu_open=0;mark_dirty();return;}if(s==0x3B){launch_app(APP_BROWSER);return;}if(s==0x3C){launch_app(APP_CALC);return;}if(s==0x3D){launch_app(APP_EDITOR);return;}if(s==0x3E){launch_app(APP_FILES);return;}if(s==0x3F){if(current_app==APP_EDITOR)save_note();else if(current_app==APP_SETTINGS)save_settings();else if(current_app==APP_BROWSER&&browser_url[0])browser_fetch();mark_dirty();return;}if(s==0x40){launch_app(APP_TASKS);return;}if(s==0x41){launch_app(APP_TERMINAL);return;}if(s==0x42){launch_app(APP_CALENDAR);return;}if(s==0x43){launch_app(APP_CONTROL);return;}if(s==0x44){launch_app(APP_SYSINFO);return;}if(s==0x57){launch_app(APP_ABOUT);return;}
+    if(alt_down&&s==0x0F){int a=current_app;current_app=previous_app;previous_app=a;menu_open=0;power_menu=0;mark_dirty();return;}
+    if(s==0x58){power_menu^=1;menu_open=0;mark_dirty();return;}if(s==0x3B){launch_app(APP_BROWSER);return;}if(s==0x3C){launch_app(APP_CALC);return;}if(s==0x3D){launch_app(APP_EDITOR);return;}if(s==0x3E){launch_app(APP_FILES);return;}if(s==0x3F){if(current_app==APP_EDITOR)save_note();else if(current_app==APP_SETTINGS)save_settings();else if(current_app==APP_BROWSER&&browser_url[0])browser_fetch();mark_dirty();return;}if(s==0x40){launch_app(APP_TASKS);return;}if(s==0x41){launch_app(APP_TERMINAL);return;}if(s==0x42){launch_app(APP_CALENDAR);return;}if(s==0x43){launch_app(APP_CONTROL);return;}if(s==0x44){launch_app(APP_SYSINFO);return;}if(s==0x57){launch_app(APP_ABOUT);return;}
     if(s==1){current_app=APP_DESKTOP;menu_open=0;mark_dirty();return;}
     if(s==0x38&&current_app==APP_BROWSER){browser_focus=1;mark_dirty();return;}
     if(menu_open){if(current_app==APP_DESKTOP){}menu_open=0;return;}
