@@ -1082,6 +1082,7 @@ static void menu_click(uint32_t x,uint32_t y){
     }
 }
 
+static char key_char(uint8_t s);
 static void menu_key(uint8_t s){
     if(s==0x01){menu_open=0;menu_search_len=0;menu_search[0]=0;mark_dirty();return;}
     if(s==0x0E){if(menu_search_len)menu_search[--menu_search_len]=0;mark_dirty();return;}
