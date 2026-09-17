@@ -711,17 +711,17 @@ static void draw_browser(void){
     fill_rect(34,106,field_w,40,bg_color());stroke_rect(34,106,field_w,40,browser_focus?accent_color():panel2_color());
     if(browser_url[0])text_clip(46,117,browser_url,text_color(),1,field_w-24);else text(46,117,"TYPE URL THEN ENTER",sub_color(),1);
     int bx=(int)width-326;
-    for(int i=0;i<browser_tab_count;i++){int tx=38+i*120,ty=152;fill_rect(tx,ty,110,28,i==browser_current_tab?accent_dark():panel2_color());char tn[8]={'T',(char)('1'+i),0};text(tx+10,ty+8,tn,i==browser_current_tab?0xFFFFFFu:text_color(),1);}
+    for(int i=0;i<browser_tab_count;i++){int tx=38+i*120,ty=152;fill_rect(tx,ty,110,28,i==browser_current_tab?accent_dark():panel2_color());char tn[8]={'T',(char)('1'+i),0};text(tx+10,ty+8,tn,i==browser_current_tab?0xFFFFFFu:text_color(),1);if(browser_tabs[i][0])text(tx+32,ty+8,"OPEN",sub_color(),1);}
 
     const char*bn[]={"B","F","R"};
     for(int i=0;i<3;i++){fill_rect(bx+i*56,106,50,40,panel2_color());text(bx+19+i*56,117,bn[i],i==2?accent_color():text_color(),1);}
     char st[24];status_text(st,sizeof(st),browser_status);if(browser_status){text((int)width-92,118,st,good_color(),1);}
     if(!browser_loaded){text(52,180,boot_info->uefi_http_get?"READY TO FETCH HTTP/HTTPS CONTENT":"FIRMWARE HTTP BRIDGE UNAVAILABLE",text_color(),2);text(52,216,"TYPE A DOMAIN SUCH AS HTTP://NEVERSL.COM/",sub_color(),1);text(52,246,"THE PAGE IS FETCHED BY THE UEFI NETWORK STACK.",sub_color(),1);}
     else{
-        fill_rect(34,160,(int)width-310,(int)height-286,bg_color());text_clip(52,176,browser_title[0]?browser_title:"UNTITLED",accent_color(),2,(int)width-350);
-        int x=52,y=214,lines=0;const char*p=browser_text;int skip=browser_scroll;while(*p&&skip>0){if(*p=='\n')skip--;p++;}while(*p&&lines<((int)height-330)/16){int used=0;while(*p&&*p!='\n'&&used<((int)width-350)/6){glyph(x+used*6,y+lines*16,*p,text_color(),1);used++;p++;}while(*p&&*p!='\n')p++;if(*p=='\n')p++;lines++;}
+        fill_rect(34,184,(int)width-310,(int)height-310,bg_color());text_clip(52,196,browser_title[0]?browser_title:"UNTITLED",accent_color(),2,(int)width-350);
+        int x=52,y=232,lines=0;const char*p=browser_text;int skip=browser_scroll;while(*p&&skip>0){if(*p=='\n')skip--;p++;}while(*p&&lines<((int)height-330)/16){int used=0;while(*p&&*p!='\n'&&used<((int)width-350)/6){glyph(x+used*6,y+lines*16,*p,text_color(),1);used++;p++;}while(*p&&*p!='\n')p++;if(*p=='\n')p++;lines++;}
         if(browser_image_loaded){draw_browser_image();if(browser_image_alt[0])text((int)width-270,372,browser_image_alt,text_color(),1);}
-        fill_rect((int)width-286,160,252,(int)height-286,panel2_color());text( (int)width-270,178,"LINKS",sub_color(),1);for(int i=0;i<browser_link_count;i++){int yy=204+i*42;fill_rect((int)width-270,yy,220,32,panel_color());char num[2]={(char)('1'+i),0};text((int)width-258,yy+10,num,accent_color(),1);text_clip((int)width-238,yy+10,browser_link_text[i],text_color(),1,178);}
+        fill_rect((int)width-286,184,252,(int)height-310,panel2_color());text((int)width-270,202,"LINKS",sub_color(),1);for(int i=0;i<browser_link_count;i++){int yy=228+i*42;fill_rect((int)width-270,yy,220,32,panel_color());char num[2]={(char)('1'+i),0};text((int)width-258,yy+10,num,accent_color(),1);text_clip((int)width-238,yy+10,browser_link_text[i],text_color(),1,178);}
     }
     text(40,(int)height-98,"HTTP BROWSER  •  CTRL+L ADDRESS  •  CTRL+D SAVE BOOKMARK  •  CTRL+B OPEN BOOKMARK",sub_color(),1);taskbar();
 }
