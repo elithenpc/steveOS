@@ -1234,6 +1234,9 @@ static void launch_app(int app){
     selected_file=-1;
     browser_focus=app==APP_BROWSER?1:0;
     if(app==APP_BROWSER){browser_url[0]=0;browser_loaded=0;browser_scroll=0;browser_status=0;browser_raw[0]=0;browser_text[0]=0;browser_title[0]=0;browser_link_count=0;browser_history_count=0;browser_history_pos=0;browser_history_lock=0;browser_tab_count=1;browser_current_tab=0;browser_tabs[0][0]=0;}
+    if(app==APP_INSTALLER)refresh_install_targets();
+    if(app==APP_STORE)scan_app_packages();
+    if(app==APP_SERVER||app==APP_ADVANCED)refresh_network_info();
     mark_dirty();
 }
 static void app_click(uint32_t x,uint32_t y){
@@ -1358,7 +1361,7 @@ static void handle_scan(uint8_t s){
     if(s==0xB8){alt_down=0;return;}
     if(s&0x80)return;
     if(alt_down&&s==0x0F){int a=current_app;current_app=previous_app;previous_app=a;menu_open=0;power_menu=0;mark_dirty();return;}
-    if(s==0x58){power_menu^=1;menu_open=0;mark_dirty();return;}if(s==0x3B){launch_app(APP_BROWSER);return;}if(s==0x3C){launch_app(APP_CALC);return;}if(s==0x3D){launch_app(APP_EDITOR);return;}if(s==0x3E){launch_app(APP_FILES);return;}if(s==0x3F){if(current_app==APP_EDITOR)save_note();else if(current_app==APP_SETTINGS)save_settings();else if(current_app==APP_BROWSER&&browser_url[0])browser_fetch();mark_dirty();return;}if(s==0x40){launch_app(APP_TASKS);return;}if(s==0x41){launch_app(APP_TERMINAL);return;}if(s==0x42){launch_app(APP_CALENDAR);return;}if(s==0x43){launch_app(APP_CONTROL);return;}if(s==0x44){launch_app(APP_SYSINFO);return;}if(s==0x57){launch_app(APP_ABOUT);return;}
+    if(s==0x58){power_menu^=1;menu_open=0;mark_dirty();return;}if(s==0x3B){launch_app(APP_BROWSER);return;}if(s==0x3C){launch_app(APP_CALC);return;}if(s==0x3D){launch_app(APP_EDITOR);return;}if(s==0x3E){launch_app(APP_FILES);return;}if(s==0x3F){if(current_app==APP_EDITOR)save_note();else if(current_app==APP_SETTINGS||current_app==APP_ADVANCED)save_settings();else if(current_app==APP_BROWSER&&browser_url[0])browser_fetch();mark_dirty();return;}if(s==0x40){launch_app(APP_TASKS);return;}if(s==0x41){launch_app(APP_TERMINAL);return;}if(s==0x42){launch_app(APP_CALENDAR);return;}if(s==0x43){launch_app(APP_CONTROL);return;}if(s==0x44){launch_app(APP_SYSINFO);return;}if(s==0x57){launch_app(APP_ABOUT);return;}
     if(s==1){current_app=APP_DESKTOP;menu_open=0;mark_dirty();return;}
     if(s==0x38&&current_app==APP_BROWSER){browser_focus=1;mark_dirty();return;}
     if(menu_open){menu_key(s);return;}
@@ -1376,7 +1379,7 @@ static void handle_scan(uint8_t s){
 }
 
 static void render(void){
-    switch(current_app){case APP_DESKTOP:draw_desktop();break;case APP_BROWSER:draw_browser();break;case APP_CALC:draw_calc();break;case APP_EDITOR:draw_editor();break;case APP_FILES:draw_files();break;case APP_IMAGE:draw_image();break;case APP_SETTINGS:draw_settings();break;case APP_TASKS:draw_tasks();break;case APP_TERMINAL:draw_terminal();break;case APP_CALENDAR:draw_calendar();break;case APP_CONTROL:draw_control();break;case APP_SYSINFO:draw_sysinfo();break;default:draw_about();break;}
+    switch(current_app){case APP_DESKTOP:draw_desktop();break;case APP_BROWSER:draw_browser();break;case APP_CALC:draw_calc();break;case APP_EDITOR:draw_editor();break;case APP_FILES:draw_files();break;case APP_IMAGE:draw_image();break;case APP_SETTINGS:draw_settings();break;case APP_TASKS:draw_tasks();break;case APP_TERMINAL:draw_terminal();break;case APP_CALENDAR:draw_calendar();break;case APP_CONTROL:draw_control();break;case APP_SYSINFO:draw_sysinfo();break;case APP_DEVICES:scan_pci_devices();draw_devices();break;case APP_INSTALLER:draw_installer();break;case APP_STORE:draw_store();break;case APP_SERVER:draw_server();break;case APP_ADVANCED:draw_advanced();break;default:draw_about();break;}
     draw_power_menu();
     present();dirty=0;
 }
@@ -1395,7 +1398,7 @@ void steveos_desktop_run(STEVEOS_BOOT_INFO *boot){
         if(x!=last_x||y!=last_y||b!=last_b){dirty=1;last_x=x;last_y=y;last_b=b;}
         if((b&1)&&!(previous_buttons&1)){if(menu_open)menu_click(x,y);else app_click(x,y);dirty=1;}
         previous_buttons=b;
-        if(++refresh_ticks>=8000){refresh_ticks=0;dirty=1;}
+        if(++refresh_ticks>=8000){refresh_ticks=0;refresh_network_info();dirty=1;}
         if(dirty)render();
         for(volatile int i=0;i<1800;i++)__asm__ __volatile__("pause");
     }
