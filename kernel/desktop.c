@@ -34,6 +34,8 @@ typedef uint64_t (__attribute__((ms_abi)) *LAUNCHSERVER)(void);
 typedef uint64_t (__attribute__((ms_abi)) *INSTALLAPP)(const uint16_t*);
 typedef uint64_t (__attribute__((ms_abi)) *DOWNLOADAPP)(const uint16_t*,const uint16_t*);
 typedef uint64_t (__attribute__((ms_abi)) *LAUNCHAPP)(const uint16_t*);
+typedef uint64_t (__attribute__((ms_abi)) *INSTALLWINDOWSAPP)(const uint16_t*);
+typedef uint64_t (__attribute__((ms_abi)) *RUNWINDOWSAPP)(const uint16_t*);
 typedef uint64_t (__attribute__((ms_abi)) *NETINFO)(STEVEOS_NETWORK_INFO*);
 typedef struct { uint32_t magic; uint8_t light; uint8_t scale; uint8_t accent; uint8_t service_flags; uint8_t logging; uint8_t boot_delay; uint8_t reserved0; uint32_t reserved; } SETTINGS;
 
@@ -346,8 +348,18 @@ static int is_app_package(const STEVEOS_BOOT_FILE*f){
     if(n>=4){
         char a=(char)f->name[n-4],b=(char)f->name[n-3],d=(char)f->name[n-2],e=(char)f->name[n-1];
         efi=(a=='.'&&(b=='e'||b=='E')&&(d=='f'||d=='F')&&(e=='i'||e=='I'));
+        if(!efi){
+            efi=(a=='.'&&(b=='e'||b=='E')&&(d=='x'||d=='X')&&(e=='e'||e=='E'));
+        }
     }
     return in_apps&&efi;
+}
+static int is_windows_package(const STEVEOS_BOOT_FILE*f){
+    if(!f)return 0;
+    size_t n=0;while(n<STEVEOS_BOOT_FILE_NAME_MAX&&f->name[n])n++;
+    if(n<4)return 0;
+    char a=(char)f->name[n-4],b=(char)f->name[n-3],d=(char)f->name[n-2],e=(char)f->name[n-1];
+    return a=='.'&&(b=='e'||b=='E')&&(d=='x'||d=='X')&&(e=='e'||e=='E');
 }
 static void refresh_install_targets(void){
     install_target_count=0;install_target_pick=-1;install_armed=0;
@@ -376,13 +388,26 @@ static void app_download_selected(void){
 static void app_install_selected(void){
     if(app_package_pick<0||app_package_pick>=app_package_count||!boot_info->uefi_install_app)return;
     int idx=app_package_indices[app_package_pick];
-    INSTALLAPP fn=(INSTALLAPP)(uintptr_t)boot_info->uefi_install_app;
-    uint64_t st=fn(boot_files[idx].name);
+    uint64_t st;
+    if(is_windows_package(&boot_files[idx])){
+        if(!boot_info->uefi_install_windows_app){app_install_done=2;return;}
+        INSTALLWINDOWSAPP fn=(INSTALLWINDOWSAPP)(uintptr_t)boot_info->uefi_install_windows_app;
+        st=fn(boot_files[idx].name);
+    }else{
+        if(!boot_info->uefi_install_app){app_install_done=2;return;}
+        INSTALLAPP fn=(INSTALLAPP)(uintptr_t)boot_info->uefi_install_app;
+        st=fn(boot_files[idx].name);
+    }
     app_install_done=(st==0)?1:2;
-}
 static void app_launch_selected(void){
     if(app_package_pick<0||app_package_pick>=app_package_count||!boot_info->uefi_launch_app)return;
     int idx=app_package_indices[app_package_pick];
+    if(is_windows_package(&boot_files[idx])){
+        if(!boot_info->uefi_run_windows_app)return;
+        RUNWINDOWSAPP fn=(RUNWINDOWSAPP)(uintptr_t)boot_info->uefi_run_windows_app;
+        fn(boot_files[idx].name);
+        return;
+    }
     uint16_t path[STEVEOS_BOOT_FILE_NAME_MAX+16];
     size_t n=0;while(n<STEVEOS_BOOT_FILE_NAME_MAX&&boot_files[idx].name[n])n++;
     size_t start=0;for(size_t i=0;i<n;i++)if(boot_files[idx].name[i]=='/'||boot_files[idx].name[i]=='\\')start=i+1;
@@ -564,21 +589,21 @@ static void draw_installer(void){
     taskbar();
 }
 static void draw_store(void){
-    window_bar("APP STORE","NATIVE UEFI APPLICATION PACKAGES");
+    window_bar("APP STORE","EFI + WINDOWS APPLICATION PACKAGES");
     text(42,116,"AVAILABLE PACKAGES",accent_color(),1);
     fill_rect(42,134,(int)width-84,34,bg_color());stroke_rect(42,134,(int)width-84,34,app_download_focus?accent_color():panel2_color());
     text_clip(54,143,app_download_url[0]?app_download_url:"DOWNLOAD EFI APP FROM URL",text_color(),1,(int)width-110);
     text((int)width-150,143,"ENTER FETCH",sub_color(),1);
-    text(42,176,"Packages are EFI applications stored under the Apps folder.",sub_color(),1);
+    text(42,176,"EFI apps run in firmware; EXE apps use Server Mode + Wine.",sub_color(),1);
     if(app_package_count==0){
-        text(42,188,"NO APP PACKAGES ON THIS BOOT VOLUME.",text_color(),2);
-        text(42,224,"ADD A .EFI APPLICATION UNDER \\Apps TO MAKE IT INSTALLABLE.",sub_color(),1);
+        text(42,188,"NO INSTALLABLE PACKAGES ON THIS BOOT VOLUME.",text_color(),2);
+        text(42,224,"ADD A .EFI OR .EXE UNDER \\Apps TO MAKE IT INSTALLABLE.",sub_color(),1);
     }
     for(int i=0;i<app_package_count&&i<7;i++){
         int y=214+i*48;int idx=app_package_indices[i];char name[80];file_name(&boot_files[idx],name,sizeof(name));
         fill_rect(42,y,(int)width-84,38,i==app_package_pick?accent_dark():panel_color());
         text(58,y+11,name,i==app_package_pick?0xFFFFFFu:text_color(),1);
-        text((int)width-290,y+11,"UEFI APP",sub_color(),1);
+        text((int)width-290,y+11,is_windows_package(&boot_files[idx])?"WINDOWS EXE":"UEFI APP",sub_color(),1);
     }
     fill_rect(42,(int)height-136,150,38,panel2_color());text(62,(int)height-125,"INSTALL",text_color(),1);
     fill_rect(208,(int)height-136,150,38,app_package_pick>=0?accent_color():panel2_color());text(228,(int)height-125,"INSTALL + RUN",text_color(),1);
@@ -641,7 +666,7 @@ static void draw_desktop(void){
         if(x+cw>(int)width-20)continue;
         fill_rect(x+3,y+4,cw,ch,0x05080Bu);fill_rect(x,y,cw,ch,panel_color());
         static const int desktop_icon_map[]={0,1,2,3,11,6,5,4,7,13,15,14,15,14,15,15,6};draw_icon(x+14,y+14,desktop_icon_map[i]);text(x+82,y+21,names[i],text_color(),1);
-        text(x+82,y+43,i==0?"REAL HTTP FIRMWARE BRIDGE":i==1?"INTEGER EXPRESSION ENGINE":i==2?"NVRAM TEXT EDITOR":i==3?"BOOT VOLUME EXPLORER":i==4?"BMP + BOOT IMAGE":i==5?"THEME + INPUT":i==6?"LIVE SYSTEM STATUS":i==7?"NATIVE COMMAND SHELL":i==8?"SYSTEM DATE + TIME":i==9?"HARDWARE CONTROL CENTER":i==10?"LICENSES + BUILD INFO":i==11?"CPU + MEMORY + FIRMWARE":i==12?"PCI HARDWARE ENUMERATION":i==13?"INSTALL TO EXISTING EFI VOLUME":i==14?"INSTALLABLE UEFI APPS":i==15?"DISCORD + TAILSCALE SERVICES":"SERVER + BOOT RUNTIME CONTROLS",sub_color(),1);
+        text(x+82,y+43,i==0?"REAL HTTP FIRMWARE BRIDGE":i==1?"INTEGER EXPRESSION ENGINE":i==2?"NVRAM TEXT EDITOR":i==3?"BOOT VOLUME EXPLORER":i==4?"BMP + BOOT IMAGE":i==5?"THEME + INPUT":i==6?"LIVE SYSTEM STATUS":i==7?"NATIVE COMMAND SHELL":i==8?"SYSTEM DATE + TIME":i==9?"HARDWARE CONTROL CENTER":i==10?"LICENSES + BUILD INFO":i==11?"CPU + MEMORY + FIRMWARE":i==12?"PCI HARDWARE ENUMERATION":i==13?"INSTALL TO EXISTING EFI VOLUME":i==14?"EFI + WINDOWS APP PACKAGES":i==15?"DISCORD + TAILSCALE SERVICES":"SERVER + BOOT RUNTIME CONTROLS",sub_color(),1);
         if(ap[i]>=0)fill_rect(x+cw-24,y+17,7,7,(current_app==ap[i])?accent_color():panel2_color());
     }
     text(30,(int)height-82,"TRADITIONAL PANEL  •  KEYBOARD SHORTCUTS  •  NATIVE INPUT  •  MINT-INSPIRED VISUALS",sub_color(),1);
@@ -1204,9 +1229,28 @@ static void terminal_server_boot(void){
     LAUNCHSERVER fn=(LAUNCHSERVER)(uintptr_t)boot_info->uefi_launch_server;
     fn();
 }
+static void terminal_exes(void){
+    int shown=0;
+    for(uint64_t i=0;boot_info&&i<boot_info->boot_file_count&&shown<8;i++)
+        if(boot_files[i].kind==4){
+            char name[80];file_name(&boot_files[i],name,sizeof(name));terminal_add(name);shown++;
+        }
+    if(!shown)terminal_add("NO EXE FILES");
+}
+static void terminal_run_exe(const char*name){
+    if(!name||!name[0]||!boot_info->uefi_run_windows_app){terminal_add("EXE RUNTIME UNAVAILABLE");return;}
+    uint16_t path[STEVEOS_BOOT_FILE_NAME_MAX];size_t p=0;
+    const char*prefix="\\SteveOS\\Apps\\";
+    for(size_t i=0;prefix[i]&&p+1<sizeof(path)/sizeof(path[0]);i++)path[p++]=(uint16_t)(unsigned char)prefix[i];
+    for(size_t i=0;name[i]&&p+1<sizeof(path)/sizeof(path[0]);i++)path[p++]=(uint16_t)(unsigned char)name[i];
+    path[p]=0;
+    RUNWINDOWSAPP fn=(RUNWINDOWSAPP)(uintptr_t)boot_info->uefi_run_windows_app;
+    uint64_t st=fn(path);
+    terminal_add(st==0?"STARTING WINDOWS APP":"WINDOWS APP FAILED");
+}
 static void terminal_exec(void){
     terminal_input[terminal_len]=0;
-    if(str_eq(terminal_input,"HELP"))terminal_add("HELP LS OPEN MEM NET NETTEST DISKS APPS APP INSTALL APPGET STATUS SERVICES SERVICE SERVER SERVER BOOT SERVER CONFIG STORE INSTALL ADVANCED SYSINFO VERSION BROWSE REFRESH CLEAR REBOOT HALT DATE");
+    if(str_eq(terminal_input,"HELP"))terminal_add("HELP LS OPEN MEM NET NETTEST DISKS APPS EXES APP INSTALL APPGET RUNEXE STATUS SERVICES SERVICE SERVER SERVER BOOT SERVER CONFIG STORE INSTALL ADVANCED SYSINFO VERSION BROWSE REFRESH CLEAR REBOOT HALT DATE");
     else if(str_eq(terminal_input,"LS"))terminal_list();
     else if(begins_ci(terminal_input,"OPEN ")){size_t i=5;while(terminal_input[i]==' ')i++;terminal_open_file(terminal_input+i);}
     else if(str_eq(terminal_input,"MEM"))terminal_add("OPEN TASK MANAGER FOR LIVE MEMORY DETAILS");
@@ -1214,6 +1258,8 @@ static void terminal_exec(void){
     else if(str_eq(terminal_input,"NETTEST"))terminal_net_test();
     else if(str_eq(terminal_input,"DISKS"))terminal_disks();
     else if(str_eq(terminal_input,"APPS"))terminal_apps();
+    else if(str_eq(terminal_input,"EXES"))terminal_exes();
+    else if(begins_ci(terminal_input,"RUNEXE ")){size_t i=7;while(terminal_input[i]==' ')i++;terminal_run_exe(terminal_input+i);}
     else if(begins_ci(terminal_input,"APP INSTALL ")){terminal_app_action(terminal_input+12,0);}
     else if(begins_ci(terminal_input,"APP RUN ")){terminal_app_action(terminal_input+8,1);}
     else if(begins_ci(terminal_input,"APPGET ")){size_t i=7,n=0;app_download_url[0]=0;while(terminal_input[i]&&n+1<BROWSER_URL_MAX)app_download_url[n++]=terminal_input[i++];app_download_url[n]=0;current_app=APP_STORE;app_download_focus=1;mark_dirty();}
@@ -1232,7 +1278,7 @@ static void terminal_exec(void){
     else if(str_eq(terminal_input,"SERVER")){current_app=APP_SERVER;refresh_network_info();mark_dirty();}
     else if(str_eq(terminal_input,"ADVANCED")){current_app=APP_ADVANCED;refresh_network_info();mark_dirty();}
     else if(str_eq(terminal_input,"SYSINFO")){current_app=APP_SYSINFO;mark_dirty();}
-    else if(str_eq(terminal_input,"VERSION"))terminal_add("STEVEOS NATIVE DESKTOP 0.9+");
+    else if(str_eq(terminal_input,"VERSION"))terminal_add("STEVEOS NATIVE DESKTOP 1.0+");
     else if(str_eq(terminal_input,"DATE")){current_app=APP_CALENDAR;mark_dirty();}
     else if(str_eq(terminal_input,"BROWSE")){current_app=APP_BROWSER;browser_focus=1;mark_dirty();}
     else if(begins_ci(terminal_input,"BROWSE ")){size_t i=7;while(terminal_input[i]==' ')i++;size_t n=0;browser_url[0]=0;if(!begins_ci(terminal_input+i,"http://")&&!begins_ci(terminal_input+i,"https://")){const char*p="http://";while(*p)browser_url[n++]=*p++;}while(terminal_input[i]&&n+1<BROWSER_URL_MAX)browser_url[n++]=terminal_input[i++];browser_url[n]=0;current_app=APP_BROWSER;browser_focus=0;browser_fetch();mark_dirty();}
@@ -1419,7 +1465,7 @@ static void app_click(uint32_t x,uint32_t y){
     if(current_app==APP_CALC){int bw=100,bh=46,g=10,cols=5,x0=38,y0=204;const char*keys[]={"7","8","9","/","4","5","6","*","1","2","3","-","0","(",")","+","C","=","."};for(int i=0;i<19;i++){int bx=x0+(i%cols)*(bw+g),by=y0+(i/cols)*(bh+g);if(hit(x,y,bx,by,bw,bh)){char c=keys[i][0];if(c=='C'){calc_len=0;calc_input[0]=0;calc_has_result=0;}else if(c=='=')calc_eval();else if(calc_len<CALC_MAX){calc_input[calc_len++]=c;calc_input[calc_len]=0;calc_has_result=0;}mark_dirty();return;}}}
     else if(current_app==APP_FILES){
         for(int p=0;p<6;p++)if(hit(x,y,50,150+p*42,190,34)){file_filter=p;file_scroll=0;selected_file=-1;mark_dirty();return;}
-        for(int row=0;row<10;row++){uint64_t i=0;if(!visible_file_at(file_scroll+row,&i))break;if(hit(x,y,278,150+row*40,(int)width-316,32)){selected_file=(int)i;STEVEOS_BOOT_FILE*f=&boot_files[i];if(f->kind==1)current_app=APP_IMAGE;else if(f->kind==2&&f->data){if(boot_name_is_html(f))browser_load_local_file(f);else load_text_file(f);}mark_dirty();return;}}
+        for(int row=0;row<10;row++){uint64_t i=0;if(!visible_file_at(file_scroll+row,&i))break;if(hit(x,y,278,150+row*40,(int)width-316,32)){selected_file=(int)i;STEVEOS_BOOT_FILE*f=&boot_files[i];if(f->kind==1)current_app=APP_IMAGE;else if(f->kind==4){if(boot_info->uefi_run_windows_app) {RUNWINDOWSAPP fn=(RUNWINDOWSAPP)(uintptr_t)boot_info->uefi_run_windows_app;fn(f->name);}}else if(f->kind==2&&f->data){if(boot_name_is_html(f))browser_load_local_file(f);else load_text_file(f);}mark_dirty();return;}}
     }
     else if(current_app==APP_SETTINGS){if(hit(x,y,42,136,(int)width-84,54))light_theme^=1;else if(hit(x,y,42,202,(int)width-84,54)){pointer_scale=pointer_scale>=4?1:pointer_scale+1;native_pointer_set_scale(pointer_scale);}else if(hit(x,y,42,308,(int)width-84,54)){accent_id=(uint8_t)((accent_id+1)&3u);}mark_dirty();}
     else if(current_app==APP_CONTROL){
