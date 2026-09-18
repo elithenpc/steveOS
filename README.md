@@ -81,3 +81,12 @@ Server Mode now uses Alpine Linux 3.24.2 with the LTS kernel and exposes the hos
 ## Updates
 
 SteveOS checks the public VERSION file on GitHub after startup and can show an UPDATE READY notification. Advanced Settings and the terminal commands UPDATE, UPDATE CHECK and UPDATE INSTALL can check or install the rolling latest release. Installing an update replaces the native EFI loader and Server Mode runtime files; reboot after a successful install.
+
+
+## Windows EXE compatibility
+
+SteveOS can launch Windows `.exe` programs through Wine inside Server Mode. The native desktop detects EXE files and can launch them through the compatibility runtime.
+
+The Terminal supports `EXES` and `RUNEXE filename.exe`. Server Mode uses Wine with Xvfb for compatibility display.
+
+Only run EXEs you trust.
