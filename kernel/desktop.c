@@ -1397,8 +1397,8 @@ static void menu_click(uint32_t x,uint32_t y){
     if(!hit(x,y,mx,my,mw,mh)){menu_open=0;menu_search_len=0;menu_search[0]=0;mark_dirty();return;}
     if(hit(x,y,mx+18,my+60,mw-36,30)){return;}
     int shown=0;
-    for(int i=0;i<13;i++)if(contains_ci(menu_names[i],menu_search)){
-        int row=shown%7,col=shown/7,bx=mx+18+col*196,by=my+98+row*55;
+    for(int i=0;i<17;i++)if(contains_ci(menu_names[i],menu_search)){
+        int row=shown%9,col=shown/9,bx=mx+18+col*196,by=my+98+row*55;
         if(hit(x,y,bx,by,180,45)){launch_app(menu_apps[i]);return;}
         shown++;
     }
