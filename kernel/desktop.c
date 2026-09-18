@@ -80,6 +80,7 @@ static uint8_t menu_open,power_menu,menu_search_len;
 static char menu_search[64];
 static uint8_t note[NOTE_MAX+1];
 static size_t note_len,note_cursor;
+static uint16_t editor_target_path[128];
 static char calc_input[CALC_MAX+1];
 static size_t calc_len;
 static int64_t calc_result;
@@ -282,10 +283,11 @@ static void open_first_bookmark(void){
 }
 
 static void load_note(void){
-    note_len=note_cursor=0;note_dirty=0;
+    note_len=note_cursor=0;note_dirty=0;editor_target_path[0]=0;
     if(!boot_info->uefi_get_variable)return;
     GETVAR get=(GETVAR)(uintptr_t)boot_info->uefi_get_variable;uint32_t a=0;uint64_t z=NOTE_MAX;
-    if(get((uint16_t*)note_name,(GUID*)&note_guid,&a,&z,note)==0){if(z>NOTE_MAX)z=NOTE_MAX;note_len=(size_t)z;note_cursor=note_len;}note[note_len]=0;
+    if(get((uint16_t*)note_name,(GUID*)&note_guid,&a,&z,note)==0){if(z>NOTE_MAX)z=NOTE_MAX;note_len=(size_t)z;note_cursor=note_len;}
+    note[note_len]=0;
 }
 static void save_note(void){
     if(boot_info->uefi_set_variable){
@@ -294,12 +296,22 @@ static void save_note(void){
     }
     if(boot_info->uefi_write_text&&note_len){
         WRITEFILE write=(WRITEFILE)(uintptr_t)boot_info->uefi_write_text;
-        write((const uint16_t*)note_file_name,note,note_len);
+        if(editor_target_path[0])write(editor_target_path,note,note_len);
+        else write((const uint16_t*)note_file_name,note,note_len);
     }
     note_dirty=0;
 }
+
 static void file_name(const STEVEOS_BOOT_FILE*f,char*out,size_t cap){size_t i=0;if(!cap)return;while(f&&i+1<cap&&i<STEVEOS_BOOT_FILE_NAME_MAX&&f->name[i]){uint16_t c=f->name[i++];out[i-1]=c<128?(char)c:'?';}out[i]=0;}
-static void load_text_file(STEVEOS_BOOT_FILE*f){if(!f||!f->data||!f->size)return;size_t n=(size_t)f->size;if(n>NOTE_MAX)n=NOTE_MAX;const uint8_t*d=(const uint8_t*)(uintptr_t)f->data;for(size_t i=0;i<n;i++)note[i]=(d[i]>=32||d[i]=='\n'||d[i]=='\t')?d[i]:' ';note[n]=0;note_len=n;note_cursor=n;note_dirty=0;current_app=APP_EDITOR;mark_dirty();}
+static void load_text_file(STEVEOS_BOOT_FILE*f){
+    if(!f||!f->data||!f->size)return;
+    size_t n=(size_t)f->size;if(n>NOTE_MAX)n=NOTE_MAX;
+    const uint8_t*d=(const uint8_t*)(uintptr_t)f->data;
+    for(size_t i=0;i<n;i++)note[i]=(d[i]>=32||d[i]=='\n'||d[i]=='\t')?d[i]:' ';
+    note[n]=0;note_len=n;note_cursor=n;note_dirty=0;
+    size_t p=0;while(p<127&&f->name[p]){editor_target_path[p]=f->name[p];p++;}editor_target_path[p]=0;
+    current_app=APP_EDITOR;mark_dirty();
+}
 static void internet_test(void){
     net_test_state=0;
     if(!boot_info->uefi_http_get)return;
@@ -1325,6 +1337,7 @@ static void launch_app(int app){
     if(app>=0){
         if(app!=current_app)previous_app=current_app;
         current_app=app;
+        if(app==APP_EDITOR){editor_target_path[0]=0;}
     }
     selected_file=-1;
     browser_focus=app==APP_BROWSER?1:0;
