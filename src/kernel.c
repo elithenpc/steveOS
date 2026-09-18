@@ -464,10 +464,11 @@ EFI_STATUS steveos_install_app(const CHAR16 *source_path){
 EFI_STATUS steveos_download_app(const CHAR16 *url,const CHAR16 *filename){
     if(!url||!filename||!steveos_boot_device||
        (!steveos_is_efi_name(filename)&&!steveos_is_exe_name(filename)))return EFI_INVALID_PARAMETER;
-    CHAR8 *data=AllocatePool(1024*1024);
+    const UINTN max_download=16ULL*1024ULL*1024ULL;
+    CHAR8 *data=AllocatePool(max_download);
     if(!data)return EFI_OUT_OF_RESOURCES;
     UINTN len=0;UINT32 status=0;
-    EFI_STATUS st=steveos_http_get(url,data,1024*1024-1,&len,&status);
+    EFI_STATUS st=steveos_http_get(url,data,max_download-1,&len,&status);
     if(EFI_ERROR(st)||status<200||status>=300||len<4){FreePool(data);return EFI_ABORTED;}
     EFI_FILE_PROTOCOL *root=NULL,*apps=NULL,*file=NULL;
     st=steveos_fs_open_volume(steveos_boot_device,&root);
