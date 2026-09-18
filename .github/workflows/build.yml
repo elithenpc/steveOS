@@ -23,8 +23,9 @@ jobs:
 
       - name: Assemble bootable USB image
         run: |
-          mkdir -p usb/EFI/BOOT
+          mkdir -p usb/EFI/BOOT usb/Apps
           cp build/BOOTX64.EFI usb/EFI/BOOT/BOOTX64.EFI
+          cp build/apps/Hello.efi usb/Apps/Hello.efi
           truncate -s 64M steveOS.img
           mkfs.fat -F 32 steveOS.img
           mcopy -s -i steveOS.img usb/* ::/
