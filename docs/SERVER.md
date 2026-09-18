@@ -1,10 +1,10 @@
-# SteveOS server roadmap
+# SteveOS Server Mode
 
 SteveOS can already use firmware-provided networking for outbound HTTP/HTTPS requests, and the native desktop can inspect the firmware network adapter.
 
 ## Discord bot hosting
 
-A normal Discord bot uses the Discord API and, for Gateway-based bots, maintains a real-time Gateway connection. SteveOS therefore needs a userspace runtime plus native TCP, TLS, DNS, and WebSocket support before a Node.js bot can run directly on SteveOS.
+A normal Discord bot uses the Discord API and maintains network connections for its chosen API features. Native SteveOS still lacks a full POSIX userspace and native TCP/TLS/DNS/WebSocket stack, so Server Mode supplies an Alpine Linux userspace for the practical implementation.
 
 The intended path is:
 
@@ -50,3 +50,10 @@ The native Server Manager stores explicit startup intent for Discord and Tailsca
 The browser and App Store can use the UEFI HTTP service when firmware networking is configured. The terminal command `NETTEST` performs an HTTP connectivity check.
 
 The next major networking milestone is native packet networking. Keeping UEFI HTTP as a compatibility bridge during development lets SteveOS retain useful internet access while the native stack is built.
+
+## Windows compatibility
+
+Windows EXE files can be placed in the Apps directory and launched through Server Mode. The runtime uses Wine with Xvfb, so console and service programs can run directly and GUI programs can run on a virtual X display. A GUI program does not automatically appear inside the native SteveOS framebuffer yet.
+\n## Multimedia and hardware compatibility\n\nThe Server Mode image now uses Alpine Linux 3.24.2 and the LTS kernel rather than the minimal virtual kernel. It includes FFmpeg, GStreamer base/good/bad/ugly plugins, ALSA, PipeWire, V4L2 utilities, Intel firmware and common Linux hardware tools. The init script attempts common network, graphics, camera, audio, storage and Bluetooth modules. Host device nodes are exposed to the runtime, so camera devices can appear as /dev/video* and audio devices as /dev/snd.
+\nThese are Linux compatibility facilities. Native SteveOS still needs dedicated kernel drivers and device APIs before cameras, microphones, hardware-accelerated multimedia and Windows compatibility are first-class native desktop features.
+\n## Automatic updates\n\nGitHub Actions publishes a rolling latest release containing the native EFI loader, Server Mode bootloader, LTS kernel, initramfs and full USB image. The native Update Centre checks the repository VERSION file and downloads the release assets through the firmware HTTP client.
