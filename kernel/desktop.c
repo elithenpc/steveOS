@@ -386,7 +386,7 @@ static void app_download_selected(void){
     if(st==0)scan_app_packages();
 }
 static void app_install_selected(void){
-    if(app_package_pick<0||app_package_pick>=app_package_count||!boot_info->uefi_install_app)return;
+    if(app_package_pick<0||app_package_pick>=app_package_count)return;
     int idx=app_package_indices[app_package_pick];
     uint64_t st;
     if(is_windows_package(&boot_files[idx])){
@@ -399,8 +399,9 @@ static void app_install_selected(void){
         st=fn(boot_files[idx].name);
     }
     app_install_done=(st==0)?1:2;
+}
 static void app_launch_selected(void){
-    if(app_package_pick<0||app_package_pick>=app_package_count||!boot_info->uefi_launch_app)return;
+    if(app_package_pick<0||app_package_pick>=app_package_count)return;
     int idx=app_package_indices[app_package_pick];
     if(is_windows_package(&boot_files[idx])){
         if(!boot_info->uefi_run_windows_app)return;
@@ -1161,7 +1162,12 @@ static void terminal_open_file(const char*path){
         if(terminal_file_match(name,path)){
             selected_file=(int)i;
             if(f->kind==1)current_app=APP_IMAGE;
-            else if(f->kind==2&&f->data){if(boot_name_is_html(f))browser_load_local_file(f);else load_text_file(f);}
+            else if(f->kind==4){
+                if(boot_info->uefi_run_windows_app){
+                    RUNWINDOWSAPP fn=(RUNWINDOWSAPP)(uintptr_t)boot_info->uefi_run_windows_app;
+                    fn(f->name);
+                }
+            }else if(f->kind==2&&f->data){if(boot_name_is_html(f))browser_load_local_file(f);else load_text_file(f);}
             else current_app=APP_FILES;
             mark_dirty();
             return;
