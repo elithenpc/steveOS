@@ -509,10 +509,60 @@ static EFI_STATUS steveos_launch_app(const CHAR16 *path){
     return st;
 }
 
+static BOOLEAN steveos_is_installed_windows_path(const CHAR16 *path){
+    const CHAR16 *prefix=L"\\SteveOS\\Apps\\";
+    if(!path)return FALSE;
+    for(UINTN i=0;prefix[i];i++)if(path[i]!=prefix[i])return FALSE;
+    return TRUE;
+}
+
 EFI_STATUS steveos_install_windows_app(const CHAR16 *source_path){
     if(!source_path||!steveos_boot_device||!steveos_is_exe_name(steveos_basename(source_path))||
        !steveos_is_windows_safe_name(steveos_basename(source_path)))return EFI_INVALID_PARAMETER;
-    EFI_STATUS st=steveos_install_app(source_path);
+
+    const CHAR16 *name=steveos_basename(source_path);
+    if(steveos_is_installed_windows_path(source_path))return EFI_SUCCESS;
+
+    EFI_FILE_PROTOCOL *root=NULL,*src=NULL,*dir=NULL,*apps=NULL,*dst=NULL;
+    EFI_STATUS st=steveos_fs_open_volume(steveos_boot_device,&root);
+    if(EFI_ERROR(st))return st;
+
+    st=uefi_call_wrapper(root->Open,5,root,&src,(CHAR16*)source_path,EFI_FILE_MODE_READ,0);
+    if(EFI_ERROR(st)){uefi_call_wrapper(root->Close,1,root);return st;}
+
+    st=uefi_call_wrapper(root->Open,5,root,&dir,L"SteveOS",EFI_FILE_MODE_READ|EFI_FILE_MODE_WRITE|EFI_FILE_MODE_CREATE,EFI_FILE_DIRECTORY);
+    if(!EFI_ERROR(st))st=uefi_call_wrapper(dir->Open,5,dir,&apps,L"Apps",EFI_FILE_MODE_READ|EFI_FILE_MODE_WRITE|EFI_FILE_MODE_CREATE,EFI_FILE_DIRECTORY);
+    if(!EFI_ERROR(st))st=uefi_call_wrapper(apps->Open,5,apps,&dst,(CHAR16*)name,EFI_FILE_MODE_READ|EFI_FILE_MODE_WRITE|EFI_FILE_MODE_CREATE,0);
+    if(EFI_ERROR(st)){
+        if(dst)uefi_call_wrapper(dst->Close,1,dst);
+        if(apps)uefi_call_wrapper(apps->Close,1,apps);
+        if(dir)uefi_call_wrapper(dir->Close,1,dir);
+        uefi_call_wrapper(src->Close,1,src);uefi_call_wrapper(root->Close,1,root);
+        return st;
+    }
+
+    EFI_FILE_INFO info;
+    ZeroMem(&info,sizeof(info));info.Size=sizeof(info);info.FileSize=0;info.PhysicalSize=0;
+    st=uefi_call_wrapper(dst->SetInfo,4,dst,&gEfiFileInfoGuid,info.Size,&info);
+    VOID *buf=NULL;
+    if(!EFI_ERROR(st))buf=AllocatePool(128*1024);
+    if(!buf&&!EFI_ERROR(st))st=EFI_OUT_OF_RESOURCES;
+
+    while(!EFI_ERROR(st)){
+        UINTN got=128*1024;
+        st=uefi_call_wrapper(src->Read,3,src,&got,buf);
+        if(EFI_ERROR(st)||got==0)break;
+        UINTN wr=got;
+        st=uefi_call_wrapper(dst->Write,3,dst,&wr,buf);
+        if(EFI_ERROR(st)||wr!=got){st=EFI_DEVICE_ERROR;break;}
+    }
+
+    if(buf)FreePool(buf);
+    uefi_call_wrapper(dst->Close,1,dst);
+    uefi_call_wrapper(apps->Close,1,apps);
+    uefi_call_wrapper(dir->Close,1,dir);
+    uefi_call_wrapper(src->Close,1,src);
+    uefi_call_wrapper(root->Close,1,root);
     return st;
 }
 
