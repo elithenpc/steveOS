@@ -36,6 +36,8 @@ typedef uint64_t (__attribute__((ms_abi)) *DOWNLOADAPP)(const uint16_t*,const ui
 typedef uint64_t (__attribute__((ms_abi)) *LAUNCHAPP)(const uint16_t*);
 typedef uint64_t (__attribute__((ms_abi)) *INSTALLWINDOWSAPP)(const uint16_t*);
 typedef uint64_t (__attribute__((ms_abi)) *RUNWINDOWSAPP)(const uint16_t*);
+typedef uint64_t (__attribute__((ms_abi)) *UPDATECHECK)(STEVEOS_UPDATE_INFO*);
+typedef uint64_t (__attribute__((ms_abi)) *UPDATEAPPLY)(void);
 typedef uint64_t (__attribute__((ms_abi)) *NETINFO)(STEVEOS_NETWORK_INFO*);
 typedef struct { uint32_t magic; uint8_t light; uint8_t scale; uint8_t accent; uint8_t service_flags; uint8_t logging; uint8_t boot_delay; uint8_t reserved0; uint32_t reserved; } SETTINGS;
 
@@ -75,6 +77,8 @@ static uint8_t app_install_done,app_download_focus;
 static char app_download_url[BROWSER_URL_MAX+1];
 static STEVEOS_NETWORK_INFO network_info;
 static uint8_t network_info_valid;
+static STEVEOS_UPDATE_INFO update_info;
+static uint8_t update_checked;
 static uint8_t service_flags,logging_level,boot_delay,net_test_state,server_install_state;
 typedef struct {uint8_t bus,dev,fn,class_code,subclass;uint16_t vendor,device;} PCI_VIEW;
 static PCI_VIEW pci_devices[24];
@@ -331,6 +335,26 @@ static void refresh_network_info(void){
     NETINFO fn=(NETINFO)(uintptr_t)boot_info->uefi_network_info;
     if(fn(&network_info)==0)network_info_valid=1;
 }
+static void refresh_update_info(void){
+    update_checked=1;
+    if(!boot_info->uefi_update_check)return;
+    UPDATECHECK fn=(UPDATECHECK)(uintptr_t)boot_info->uefi_update_check;
+    fn(&update_info);
+}
+static void apply_system_update(void){
+    if(!boot_info->uefi_update_apply){terminal_add("UPDATE BRIDGE UNAVAILABLE");return;}
+    UPDATEAPPLY fn=(UPDATEAPPLY)(uintptr_t)boot_info->uefi_update_apply;
+    uint64_t st=fn();
+    if(st==0){
+        update_info.available=0;
+        update_info.state=3;
+        terminal_add("UPDATE INSTALLED - REBOOT STEVEOS TO USE IT");
+        update_checked=1;
+    }else{
+        update_info.state=2;
+        terminal_add("UPDATE FAILED - CHECK NETWORK + RELEASE ASSET");
+    }
+}
 static const char*service_state(uint8_t bit){
     return (service_flags&bit)?"ARMED":"OFF";
 }
@@ -471,7 +495,7 @@ static void taskbar(void){
         int x=84+i*72;fill_rect(x,y+8,64,38,(current_app==apps[i])?panel2_color():panel_color());
         text(x+10,y+20,icons[i],text_color(),1);
     }
-    text((int)width-154,y+20,"STEVEOS",sub_color(),1);
+    text((int)width-154,y+20,update_info.available?"UPDATE READY":"STEVEOS",update_info.available?danger_color():sub_color(),1);
     fill_rect((int)width-76,y+8,64,38,power_menu?accent_dark():panel_color());
     text((int)width-64,y+20,"POWER",text_color(),1);
 }
@@ -661,7 +685,8 @@ static void draw_advanced(void){
     fill_rect(42,368,(int)width-84,48,panel_color());text(58,383,"BOOT DELAY",text_color(),1);u64_text((int)width-180,383,boot_delay,text_color(),1);text((int)width-150,383,"SECONDS",sub_color(),1);
     text(42,450,"NETWORK RUNTIME",accent_color(),1);
     fill_rect(42,470,(int)width-84,118,panel2_color());text(58,486,network_info_valid?(network_info.media_present?"LINK PRESENT":"NO CARRIER"):"NO NETWORK ADAPTER",text_color(),1);text(58,508,network_info_valid?(network_info.mac_size>=6?"MAC ADDRESS AVAILABLE":"MAC ADDRESS UNKNOWN"):"UEFI SNP UNAVAILABLE",sub_color(),1);text(58,530,net_test_state==1?"INTERNET TEST: PASSED":net_test_state==2?"INTERNET TEST: FAILED":"INTERNET TEST: NOT RUN",net_test_state==1?good_color():net_test_state==2?danger_color():sub_color(),1);text(58,552,"UEFI HTTP CLIENT CAN ACCESS INTERNET WHEN FIRMWARE NETWORKING IS CONFIGURED.",sub_color(),1);text(58,574,"NATIVE TCP/IP + TLS ARE STILL FUTURE RUNTIME COMPONENTS.",sub_color(),1);fill_rect((int)width-220,594,160,34,accent_color());text((int)width-204,603,"TEST INTERNET",0xFFFFFFu,1);
-    text(42,(int)height-98,"ARROWS CHANGE OPTIONS  •  F5 SAVE  •  VALUES ARE PERSISTED IN UEFI NVRAM",sub_color(),1);taskbar();
+    fill_rect(42,634,(int)width-84,36,panel_color());text(58,644,"SYSTEM UPDATE",accent_color(),1);text(190,644,update_info.available?"NEW VERSION READY":update_info.remote_version[0]?update_info.remote_version:"CHECK NOT RUN",update_info.available?danger_color():text_color(),1);fill_rect((int)width-220,636,76,32,panel2_color());text((int)width-207,646,"CHECK",text_color(),1);fill_rect((int)width-136,636,76,32,update_info.available?accent_color():panel2_color());text((int)width-124,646,"INSTALL",text_color(),1);
+    text(42,(int)height-98,"ARROWS  •  F5 SAVE  •  7 CHECK UPDATE  •  8 INSTALL UPDATE  •  REBOOT AFTER INSTALL",sub_color(),1);taskbar();
 }
 static void draw_desktop(void){
     panel();
@@ -1287,6 +1312,13 @@ static void terminal_exec(void){
     else if(str_eq(terminal_input,"SERVICE SSH OFF"))terminal_service_set("SSH",4,0);
     else if(str_eq(terminal_input,"SERVER BOOT"))terminal_server_boot();
     else if(str_eq(terminal_input,"SERVER CONFIG"))open_server_config();
+    else if(str_eq(terminal_input,"UPDATE")){refresh_update_info();terminal_add(update_info.available?"UPDATE READY":"NO NEW UPDATE");}
+    else if(str_eq(terminal_input,"UPDATE CHECK")){refresh_update_info();terminal_add(update_info.available?"UPDATE READY":"NO NEW UPDATE");}
+    else if(str_eq(terminal_input,"UPDATE INSTALL")){apply_system_update();}
+    else if(str_eq(terminal_input,"COMPAT")){terminal_add("WINDOWS EXE: WINE + Xvfb IN SERVER MODE");terminal_add("LINUX: ALPINE USERSpace + LTS KERNEL");terminal_add("MEDIA: FFMPEG + GSTREAMER + ALSA + PIPEWIRE");terminal_add("CAMERA: V4L2 DEVICE PASSTHROUGH");terminal_add("MIC: ALSA/PIPEWIRE DEVICE PASSTHROUGH");}
+    else if(str_eq(terminal_input,"MEDIA")){terminal_add("MEDIA STACK: FFMPEG/GSTREAMER/ALSA/PIPEWIRE/V4L2");terminal_add("SERVER MODE EXPOSES /dev/snd AND /dev/video*");}
+    else if(str_eq(terminal_input,"CAMERA")){terminal_add("CAMERA USES LINUX V4L2 IN SERVER MODE");terminal_add("CHECK /dev/video* WHEN SERVER MODE IS RUNNING");}
+    else if(str_eq(terminal_input,"MIC")){terminal_add("MIC USES ALSA/PIPEWIRE IN SERVER MODE");terminal_add("CHECK /dev/snd WHEN SERVER MODE IS RUNNING");}
     else if(str_eq(terminal_input,"STORE")){current_app=APP_STORE;scan_app_packages();mark_dirty();}
     else if(str_eq(terminal_input,"INSTALL")){current_app=APP_INSTALLER;refresh_install_targets();mark_dirty();}
     else if(str_eq(terminal_input,"SERVER")){current_app=APP_SERVER;refresh_network_info();mark_dirty();}
@@ -1472,6 +1504,7 @@ static void app_click(uint32_t x,uint32_t y){
     }
     if(y>=(uint32_t)height-54){
         if(x>(uint32_t)width-90u){power_menu^=1;menu_open=0;mark_dirty();return;}
+        if(update_info.available&&x>=(uint32_t)width-165u&&x<(uint32_t)width-90u){current_app=APP_ADVANCED;menu_open=0;mark_dirty();return;}
         if(x<76u){current_app=APP_DESKTOP;menu_open=1;mark_dirty();return;}
         if(x>=84u&&x<516u&&((x-84u)%72u)<64u){int slot=(int)((x-84u)/72u);launch_app((int[]){APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_TERMINAL,APP_SETTINGS}[slot]);return;}
     }
@@ -1525,7 +1558,10 @@ static void app_click(uint32_t x,uint32_t y){
         if(hit(x,y,42,194,(int)width-84,48)){service_flags^=2;save_settings();return;}
         if(hit(x,y,42,252,(int)width-84,48)){service_flags^=4;save_settings();return;}
         if(hit(x,y,42,310,(int)width-84,48)){logging_level^=1;save_settings();return;}
-        if(hit(x,y,42,368,(int)width-84,48)){boot_delay=boot_delay>=10?0:boot_delay+1;save_settings();return;}if(current_app==APP_ADVANCED&&hit(x,y,(int)width-220,594,160,34)){internet_test();mark_dirty();return;}
+        if(hit(x,y,42,368,(int)width-84,48)){boot_delay=boot_delay>=10?0:boot_delay+1;save_settings();return;}
+        if(hit(x,y,(int)width-220,594,160,34)){internet_test();mark_dirty();return;}
+        if(hit(x,y,(int)width-220,636,76,32)){refresh_update_info();mark_dirty();return;}
+        if(hit(x,y,(int)width-136,636,76,32)){apply_system_update();mark_dirty();return;}
     }
     else if(current_app==APP_BROWSER){
         for(int i=0;i<browser_tab_count;i++)if(hit(x,y,38+i*120,152,110,28)){browser_tab_switch(i);return;}
@@ -1691,7 +1727,7 @@ void steveos_desktop_run(STEVEOS_BOOT_INFO *boot){
         if(x!=last_x||y!=last_y||b!=last_b){dirty=1;last_x=x;last_y=y;last_b=b;}
         if((b&1)&&!(previous_buttons&1)){if(menu_open)menu_click(x,y);else app_click(x,y);dirty=1;}
         previous_buttons=b;
-        if(++refresh_ticks>=8000){refresh_ticks=0;refresh_network_info();dirty=1;}
+        if(++refresh_ticks>=8000){refresh_ticks=0;refresh_network_info();if(!update_checked)refresh_update_info();dirty=1;}
         if(dirty)render();
         for(volatile int i=0;i<1800;i++)__asm__ __volatile__("pause");
     }
