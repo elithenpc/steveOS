@@ -565,6 +565,11 @@ static void draw_advanced(void){
     fill_rect(42,470,(int)width-84,100,panel2_color());text(58,486,network_info_valid?(network_info.media_present?"LINK PRESENT":"NO CARRIER"):"NO NETWORK ADAPTER",text_color(),1);text(58,510,"UEFI HTTP CLIENT CAN ACCESS INTERNET WHEN FIRMWARE NETWORKING IS CONFIGURED.",sub_color(),1);text(58,534,"NATIVE TCP/IP + TLS ARE STILL FUTURE RUNTIME COMPONENTS.",sub_color(),1);
     text(42,(int)height-98,"ARROWS CHANGE OPTIONS  •  F5 SAVE  •  VALUES ARE PERSISTED IN UEFI NVRAM",sub_color(),1);taskbar();
 }
+static void draw_install_targets_note(void){
+    text(42,(int)height-78,"INSTALLER IS NON-DESTRUCTIVE: NO FORMAT, REPARTITION, OR DISK-WIPE OPERATION IS PERFORMED.",sub_color(),1);
+}
+static void draw_installer2(void){ draw_installer(); }
+static void draw_store2(void){ draw_store(); }
 static void draw_desktop(void){
     panel();
     text(28,72,"WELCOME",text_color(),3);
