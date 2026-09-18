@@ -460,11 +460,11 @@ static int contains_ci(const char*a,const char*b){
     }
     return 0;
 }
-static const char*menu_names[]={"Web Browser","Calculator","Text Editor","File Manager","Image Viewer","Settings","Task Manager","Terminal","Calendar","Control Center","About SteveOS","System Information","Device Manager"};
-static const int menu_apps[]={APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_IMAGE,APP_SETTINGS,APP_TASKS,APP_TERMINAL,APP_CALENDAR,APP_CONTROL,APP_ABOUT,APP_SYSINFO,APP_DEVICES};
+static const char*menu_names[]={"Web Browser","Calculator","Text Editor","File Manager","Image Viewer","Settings","Task Manager","Terminal","Calendar","Control Center","About SteveOS","System Information","Device Manager","Installer","App Store","Server Manager","Advanced Settings"};
+static const int menu_apps[]={APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_IMAGE,APP_SETTINGS,APP_TASKS,APP_TERMINAL,APP_CALENDAR,APP_CONTROL,APP_ABOUT,APP_SYSINFO,APP_DEVICES,APP_INSTALLER,APP_STORE,APP_SERVER,APP_ADVANCED};
 static int menu_filtered_app(int visible){
     int n=0;
-    for(int i=0;i<13;i++)if(contains_ci(menu_names[i],menu_search)){if(n==visible)return menu_apps[i];n++;}
+    for(int i=0;i<17;i++)if(contains_ci(menu_names[i],menu_search)){if(n==visible)return menu_apps[i];n++;}
     return APP_DESKTOP;
 }
 static void draw_start_menu(void){
@@ -476,9 +476,9 @@ static void draw_start_menu(void){
     text(x+30,y+70,menu_search[0]?menu_search:"SEARCH APPLICATIONS",menu_search[0]?text_color():sub_color(),1);
     int shown=0;
     for(int i=0;i<13;i++)if(contains_ci(menu_names[i],menu_search)){
-        int row=shown%7,col=shown/7,bx=x+18+col*196,by=y+98+row*55;
+        int row=shown%9,col=shown/9,bx=x+18+col*196,by=y+98+row*55;
         fill_rect(bx,by,180,45,(current_app==menu_apps[i])?panel2_color():bg_color());
-        static const int icon_map[]={0,1,2,3,7,6,5,4,7,7,7,6,15};draw_icon(bx+5,by-4,icon_map[i]);
+        static const int icon_map[]={0,1,2,3,7,6,5,4,7,7,7,6,15,14,15,15,6};draw_icon(bx+5,by-4,icon_map[i]);
         text(bx+66,by+12,menu_names[i],text_color(),1);
         shown++;
     }
@@ -576,7 +576,7 @@ static void draw_desktop(void){
         int col=i%cols,row=i/cols,x=x0+col*(cw+g),y=y0+row*(ch+g);
         if(x+cw>(int)width-20)continue;
         fill_rect(x+3,y+4,cw,ch,0x05080Bu);fill_rect(x,y,cw,ch,panel_color());
-        static const int desktop_icon_map[]={0,1,2,3,11,6,5,4,7,13,15,14,15};draw_icon(x+14,y+14,desktop_icon_map[i]);text(x+82,y+21,names[i],text_color(),1);
+        static const int desktop_icon_map[]={0,1,2,3,11,6,5,4,7,13,15,14,15,14,15,15,6};draw_icon(x+14,y+14,desktop_icon_map[i]);text(x+82,y+21,names[i],text_color(),1);
         text(x+82,y+43,i==0?"REAL HTTP FIRMWARE BRIDGE":i==1?"INTEGER EXPRESSION ENGINE":i==2?"NVRAM TEXT EDITOR":i==3?"BOOT VOLUME EXPLORER":i==4?"BMP + BOOT IMAGE":i==5?"THEME + INPUT":i==6?"LIVE SYSTEM STATUS":i==7?"NATIVE COMMAND SHELL":i==8?"SYSTEM DATE + TIME":i==9?"HARDWARE CONTROL CENTER":i==10?"LICENSES + BUILD INFO":"ALL APPS",sub_color(),1);
         if(ap[i]>=0)fill_rect(x+cw-24,y+17,7,7,(current_app==ap[i])?accent_color():panel2_color());
     }
@@ -1262,7 +1262,7 @@ static void app_click(uint32_t x,uint32_t y){
         else if(hit(x,y,(int)width-214,106,50,40)){browser_focus=0;if(browser_url[0])browser_fetch();mark_dirty();}
         else{for(int i=0;i<browser_link_count;i++)if(hit(x,y,(int)width-270,228+i*42,220,32)){size_t n=0;while(browser_link_urls[i][n]&&n+1<BROWSER_URL_MAX)browser_url[n]=browser_link_urls[i][n],n++;browser_url[n]=0;browser_focus=0;browser_fetch();mark_dirty();return;}}
     }
-    else if(current_app==APP_DESKTOP){if(hit(x,y,0,(int)height-54,76,54)){menu_open^=1;if(menu_open){menu_search_len=0;menu_search[0]=0;}mark_dirty();return;}int h=54;for(int i=0;i<6;i++)if(hit(x,y,84+i*72,(int)height-h,64,38)){launch_app((int[]){APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_TERMINAL,APP_SETTINGS}[i]);return;}int cw=250,ch=80,g=14,x0=28,y0=132,cols=width>=1200?4:3;for(int i=0;i<12;i++){int col=i%cols,row=i/cols,bx=x0+col*(cw+g),by=y0+row*(ch+g);if(hit(x,y,bx,by,cw,ch)){launch_app((int[]){APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_IMAGE,APP_SETTINGS,APP_TASKS,APP_TERMINAL,APP_CALENDAR,APP_CONTROL,APP_ABOUT,APP_SYSINFO,APP_DEVICES}[i]);return;}}}
+    else if(current_app==APP_DESKTOP){if(hit(x,y,0,(int)height-54,76,54)){menu_open^=1;if(menu_open){menu_search_len=0;menu_search[0]=0;}mark_dirty();return;}int h=54;for(int i=0;i<6;i++)if(hit(x,y,84+i*72,(int)height-h,64,38)){launch_app((int[]){APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_TERMINAL,APP_SETTINGS}[i]);return;}int cw=250,ch=80,g=14,x0=28,y0=132,cols=width>=1200?4:3;for(int i=0;i<12;i++){int col=i%cols,row=i/cols,bx=x0+col*(cw+g),by=y0+row*(ch+g);if(hit(x,y,bx,by,cw,ch)){launch_app((int[]){APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_IMAGE,APP_SETTINGS,APP_TASKS,APP_TERMINAL,APP_CALENDAR,APP_CONTROL,APP_ABOUT,APP_SYSINFO,APP_DEVICES,APP_INSTALLER,APP_STORE,APP_SERVER,APP_ADVANCED}[i]);return;}}}
     else if(current_app==APP_ABOUT||current_app==APP_CONTROL||current_app==APP_TASKS||current_app==APP_EDITOR||current_app==APP_TERMINAL||current_app==APP_IMAGE||current_app==APP_CALENDAR||current_app==APP_SYSINFO||current_app==APP_DEVICES){if(hit(x,y,(int)width-62,66,30,24)){current_app=APP_DESKTOP;mark_dirty();return;}if(y>(uint32_t)height-54&&x<76){current_app=APP_DESKTOP;menu_open=1;mark_dirty();return;}}
 }
 static void menu_click(uint32_t x,uint32_t y){
