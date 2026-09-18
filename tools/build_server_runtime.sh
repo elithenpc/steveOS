@@ -25,7 +25,7 @@ proot -R $ROOT -b /proc:/proc -b /sys:/sys -b /dev:/dev /sbin/apk add --no-cache
   ca-certificates curl git openssh-server \
   iproute2 iptables kmod \
   nodejs npm python3 py3-pip \
-  tailscale wpa_supplicant linux-virt linux-firmware-intel
+  tailscale wpa_supplicant wine xvfb-run linux-virt linux-firmware-intel
 
 mkdir -p $ROOT/etc/steveos $ROOT/var/lib/tailscale $ROOT/opt/discord-bot
 
@@ -48,6 +48,37 @@ TAILSCALE_ADVERTISE_ROUTES=
 SSH_ENABLE=0
 EOF
 
+cat > $ROOT/usr/local/bin/steveos-run-exe <<'EOF'
+#!/bin/sh
+set -eu
+
+[ "$#" -ge 1 ] || {
+    echo "usage: runexe /efi/SteveOS/Apps/program.exe"
+    exit 2
+}
+
+EXE=$1
+case "$EXE" in
+    *.exe|*.EXE) ;;
+    *) echo "not a Windows .exe: $EXE"; exit 2 ;;
+esac
+
+[ -f "$EXE" ] || {
+    echo "EXE not found: $EXE"
+    exit 1
+}
+
+export WINEPREFIX=${WINEPREFIX:-/var/lib/wine}
+export WINEDEBUG=${WINEDEBUG:--all}
+mkdir -p "$WINEPREFIX"
+
+if command -v xvfb-run >/dev/null 2>&1; then
+    exec xvfb-run -a -s "-screen 0 1280x720x24" wine "$EXE"
+fi
+
+exec wine "$EXE"
+EOF
+
 cat > $ROOT/init <<'EOF'
 #!/bin/sh
 set -eu
@@ -64,7 +95,7 @@ for mod in tun e1000e r8169 igc iwlwifi; do
     modprobe "$mod" 2>/dev/null || true
 done
 
-for dev in /dev/nvme*n1p1 /dev/sd*1 /dev/mmcblk*p1; do
+for dev in /dev/nvme*n1p* /dev/sd*[0-9] /dev/mmcblk*p*; do
     [ -e "$dev" ] || continue
     if mount -t vfat "$dev" /efi 2>/dev/null; then
         break
@@ -178,6 +209,20 @@ start_ssh() {
     /usr/sbin/sshd -D &
 }
 
+run_windows_exe() {
+    [ -f /efi/SteveOS/Server/run-exe.conf ] || return 0
+    EXE_AUTORUN=$(sed -n 's/^EXE_AUTORUN=//p' /efi/SteveOS/Server/run-exe.conf 2>/dev/null | head -n1)
+    case "$EXE_AUTORUN" in
+        /efi/SteveOS/Apps/*.exe|/efi/SteveOS/Apps/*.EXE)
+            echo "Launching Windows EXE with Wine: $EXE_AUTORUN"
+            /usr/local/bin/steveos-run-exe "$EXE_AUTORUN" &
+            rm -f /efi/SteveOS/Server/run-exe.conf
+            ;;
+        "") ;;
+        *) echo "Ignoring invalid Windows EXE path" ;;
+    esac
+}
+
 start_tailscale
 start_ssh
 start_discord &
@@ -187,6 +232,7 @@ ip -brief addr 2>/dev/null || true
 echo "Discord: $DISCORD_ENABLE"
 echo "Tailscale: $TAILSCALE_ENABLE"
 echo "SSH: $SSH_ENABLE"
+echo "Windows EXE runtime: Wine + Xvfb"
 
 exec /bin/sh
 EOF
