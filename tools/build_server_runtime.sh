@@ -44,7 +44,6 @@ TAILSCALE_MODE=normal
 TAILSCALE_AUTHKEY=
 TAILSCALE_ADVERTISE_ROUTES=
 TAILSCALE_EXIT_NODE=0
-TAILSCALE_ADVERTISE_ROUTES=
 SSH_ENABLE=0
 EOF
 
@@ -95,12 +94,20 @@ for mod in tun e1000e r8169 igc iwlwifi; do
     modprobe "$mod" 2>/dev/null || true
 done
 
+mounted_server_volume=0
 for dev in /dev/nvme*n1p* /dev/sd*[0-9] /dev/mmcblk*p*; do
     [ -e "$dev" ] || continue
     if mount -t vfat "$dev" /efi 2>/dev/null; then
-        break
+        if [ -f /efi/SteveOS/Server/server-initramfs.img ] || [ -f /efi/SteveOS/Server/server.conf ]; then
+            mounted_server_volume=1
+            break
+        fi
+        umount /efi 2>/dev/null || true
     fi
 done
+if [ "$mounted_server_volume" != 1 ]; then
+    echo "SteveOS Server volume not found"
+fi
 
 CONF=/etc/steveos/server.conf
 [ -f /efi/SteveOS/Server/server.conf ] && CONF=/efi/SteveOS/Server/server.conf
@@ -213,7 +220,7 @@ run_windows_exe() {
     [ -f /efi/SteveOS/Server/run-exe.conf ] || return 0
     EXE_AUTORUN=$(sed -n 's/^EXE_AUTORUN=//p' /efi/SteveOS/Server/run-exe.conf 2>/dev/null | head -n1)
     case "$EXE_AUTORUN" in
-        /efi/SteveOS/Apps/*.exe|/efi/SteveOS/Apps/*.EXE)
+        /efi/SteveOS/Apps/*.[eE][xX][eE])
             echo "Launching Windows EXE with Wine: $EXE_AUTORUN"
             /usr/local/bin/steveos-run-exe "$EXE_AUTORUN" &
             rm -f /efi/SteveOS/Server/run-exe.conf
