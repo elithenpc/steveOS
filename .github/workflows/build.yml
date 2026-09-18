@@ -16,17 +16,24 @@ jobs:
       - name: Install UEFI build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc binutils gnu-efi python3 python3-pil mtools dosfstools
+          sudo apt-get install -y gcc binutils gnu-efi python3 python3-pil mtools dosfstools cpio gzip grub-efi-amd64-bin grub-common curl
+
+      - name: Build Server Mode runtime
+        run: sh tools/build_server_runtime.sh
 
       - name: Build BOOTX64.EFI
         run: make
 
       - name: Assemble bootable USB image
         run: |
-          mkdir -p usb/EFI/BOOT usb/Apps
+          mkdir -p usb/EFI/BOOT usb/Apps usb/SteveOS/Server
           cp build/BOOTX64.EFI usb/EFI/BOOT/BOOTX64.EFI
           cp build/apps/Hello.efi usb/Apps/Hello.efi
-          truncate -s 64M steveOS.img
+          cp build/server/ServerBoot.efi usb/SteveOS/Server/ServerBoot.efi
+          cp build/server/vmlinuz-virt usb/SteveOS/Server/vmlinuz-virt
+          cp build/server/server-initramfs.img usb/SteveOS/Server/server-initramfs.img
+          cp build/server/rootfs/etc/steveos/server.conf usb/SteveOS/Server/server.conf
+          truncate -s 512M steveOS.img
           mkfs.fat -F 32 steveOS.img
           mcopy -s -i steveOS.img usb/* ::/
 
