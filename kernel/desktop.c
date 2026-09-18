@@ -884,7 +884,7 @@ static void parse_browser_html(void){
                 if(end){
                     size_t nn=0;
                     while(q<end&&nn+1<sizeof(browser_title)){
-                        if(*q!='\\n'&&*q!='\\r')browser_title[nn++]=*q;
+                        if(*q!='\n'&&*q!='\r')browser_title[nn++]=*q;
                         q++;
                     }
                     browser_title[nn]=0;
@@ -945,7 +945,7 @@ static void parse_browser_html(void){
                 }
             }
             if(!skip&&(ci_eq(name,"br")||ci_eq(name,"p")||ci_eq(name,"div")||ci_eq(name,"li")||ci_eq(name,"h1")||ci_eq(name,"h2")||ci_eq(name,"tr")||ci_eq(name,"hr")))
-                append_text(browser_text,&tl,BROWSER_TEXT_MAX,'\\n');
+                append_text(browser_text,&tl,BROWSER_TEXT_MAX,'\n');
             i=j+1;
             continue;
         }
@@ -965,8 +965,8 @@ static void parse_browser_html(void){
             }
         }
         char ch=browser_raw[i++];
-        if(ch=='\\r')continue;
-        if(ch=='\\n'){
+        if(ch=='\r')continue;
+        if(ch=='\n'){
             append_text(browser_text,&tl,BROWSER_TEXT_MAX,' ');
             if(in_a&&browser_link_count<BROWSER_LINKS&&link_len+1<47)browser_link_text[browser_link_count][link_len++]=' ';
             continue;
@@ -981,7 +981,7 @@ static void parse_browser_html(void){
     if(!browser_title[0]){
         size_t n=0;
         for(size_t k=0;browser_text[k]&&n+1<sizeof(browser_title)&&k<120;k++){
-            if(browser_text[k]!='\\n'&&browser_text[k]!='\\r')browser_title[n++]=browser_text[k];
+            if(browser_text[k]!='\n'&&browser_text[k]!='\r')browser_title[n++]=browser_text[k];
         }
         browser_title[n]=0;
     }
