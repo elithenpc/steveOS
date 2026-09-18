@@ -409,6 +409,7 @@ static void app_launch_selected(void){
         fn(boot_files[idx].name);
         return;
     }
+    if(!boot_info->uefi_launch_app)return;
     uint16_t path[STEVEOS_BOOT_FILE_NAME_MAX+16];
     size_t n=0;while(n<STEVEOS_BOOT_FILE_NAME_MAX&&boot_files[idx].name[n])n++;
     size_t start=0;for(size_t i=0;i<n;i++)if(boot_files[idx].name[i]=='/'||boot_files[idx].name[i]=='\\')start=i+1;
