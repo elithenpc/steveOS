@@ -596,6 +596,132 @@ EFI_STATUS steveos_run_windows_app(const CHAR16 *source_path){
     return steveos_launch_server();
 }
 
+
+#define STEVEOS_VERSION "1.1.0"
+#define STEVEOS_UPDATE_MAX (192ULL * 1024ULL * 1024ULL)
+
+static uint32_t steveos_version_value(const char *s) {
+    uint32_t parts[3] = {0,0,0};
+    UINTN part = 0;
+    if (s && s[0] == 'v') s++;
+    while (s && *s && part < 3) {
+        if (*s >= '0' && *s <= '9') {
+            parts[part] = parts[part] * 10u + (uint32_t)(*s - '0');
+            if (parts[part] > 255u) parts[part] = 255u;
+        } else if (*s == '.') {
+            part++;
+        } else if (*s == '\r' || *s == '\n' || *s == ' ' || *s == '\t') {
+            break;
+        } else {
+            break;
+        }
+        s++;
+    }
+    return (parts[0] << 16) | (parts[1] << 8) | parts[2];
+}
+
+static void steveos_copy_ascii(char *dst, UINTN cap, const CHAR8 *src) {
+    if (!dst || cap == 0) return;
+    UINTN i = 0;
+    while (src && src[i] && src[i] != '\r' && src[i] != '\n' && src[i] != ' ' &&
+           i + 1 < cap) {
+        dst[i] = (char)src[i];
+        i++;
+    }
+    dst[i] = 0;
+}
+
+static EFI_STATUS steveos_ensure_server_dir(void) {
+    EFI_FILE_PROTOCOL *root = NULL, *dir = NULL, *server = NULL;
+    EFI_STATUS st = steveos_fs_open_volume(steveos_boot_device, &root);
+    if (EFI_ERROR(st)) return st;
+    st = uefi_call_wrapper(root->Open, 5, root, &dir,
+                            L"SteveOS",
+                            EFI_FILE_MODE_READ | EFI_FILE_MODE_WRITE | EFI_FILE_MODE_CREATE,
+                            EFI_FILE_DIRECTORY);
+    if (!EFI_ERROR(st))
+        st = uefi_call_wrapper(dir->Open, 5, dir, &server,
+                                L"Server",
+                                EFI_FILE_MODE_READ | EFI_FILE_MODE_WRITE | EFI_FILE_MODE_CREATE,
+                                EFI_FILE_DIRECTORY);
+    if (server) uefi_call_wrapper(server->Close, 1, server);
+    if (dir) uefi_call_wrapper(dir->Close, 1, dir);
+    uefi_call_wrapper(root->Close, 1, root);
+    return st;
+}
+
+static EFI_STATUS steveos_download_binary(const CHAR16 *url, const CHAR16 *path) {
+    if (!url || !path) return EFI_INVALID_PARAMETER;
+    CHAR8 *data = AllocatePool((UINTN)STEVEOS_UPDATE_MAX);
+    if (!data) return EFI_OUT_OF_RESOURCES;
+    UINTN len = 0;
+    UINT32 status = 0;
+    EFI_STATUS st = steveos_http_get(url, data, (UINTN)STEVEOS_UPDATE_MAX - 1,
+                                      &len, &status);
+    if (!EFI_ERROR(st) && status >= 200 && status < 300 && len > 0)
+        st = steveos_write_boot_text(path, data, len);
+    else if (!EFI_ERROR(st))
+        st = EFI_ABORTED;
+    FreePool(data);
+    return st;
+}
+
+EFI_STATUS steveos_update_check(STEVEOS_UPDATE_INFO *out) {
+    if (!out) return EFI_INVALID_PARAMETER;
+    ZeroMem(out, sizeof(*out));
+    steveos_copy_ascii(out->current_version, sizeof(out->current_version),
+                       (const CHAR8 *)STEVEOS_VERSION);
+
+    CHAR8 *data = AllocatePool(4096);
+    if (!data) {
+        out->state = 2;
+        return EFI_OUT_OF_RESOURCES;
+    }
+    UINTN len = 0;
+    UINT32 status = 0;
+    static const CHAR16 url[] =
+        L"https://raw.githubusercontent.com/elithenpc/steveOS/main/VERSION";
+    EFI_STATUS st = steveos_http_get(url, data, 4095, &len, &status);
+    if (!EFI_ERROR(st) && status == 200 && len > 0) {
+        data[len] = 0;
+        steveos_copy_ascii(out->remote_version, sizeof(out->remote_version), data);
+        out->available =
+            steveos_version_value(out->remote_version) > steveos_version_value(out->current_version);
+        out->state = 1;
+    } else {
+        out->state = 2;
+        st = EFI_ABORTED;
+    }
+    FreePool(data);
+    return st;
+}
+
+EFI_STATUS steveos_update_apply(void) {
+    if (!steveos_boot_device) return EFI_INVALID_PARAMETER;
+    EFI_STATUS st = steveos_ensure_server_dir();
+    if (EFI_ERROR(st)) return st;
+
+    static const CHAR16 boot_url[] =
+        L"https://github.com/elithenpc/steveOS/releases/download/latest/BOOTX64.EFI";
+    static const CHAR16 server_url[] =
+        L"https://github.com/elithenpc/steveOS/releases/download/latest/ServerBoot.efi";
+    static const CHAR16 kernel_url[] =
+        L"https://github.com/elithenpc/steveOS/releases/download/latest/vmlinuz-lts";
+    static const CHAR16 initrd_url[] =
+        L"https://github.com/elithenpc/steveOS/releases/download/latest/server-initramfs.img";
+
+    st = steveos_download_binary(server_url, L"\\SteveOS\\Server\\ServerBoot.efi");
+    if (EFI_ERROR(st)) return st;
+    st = steveos_download_binary(kernel_url, L"\\SteveOS\\Server\\vmlinuz-lts");
+    if (EFI_ERROR(st)) return st;
+    st = steveos_download_binary(initrd_url, L"\\SteveOS\\Server\\server-initramfs.img");
+    if (EFI_ERROR(st)) return st;
+
+    /* Replace the currently booted loader last. UEFI has already loaded it into memory. */
+    st = steveos_download_binary(boot_url, L"\\EFI\\BOOT\\BOOTX64.EFI");
+    return st;
+}
+
 EFI_STATUS steveos_network_info(STEVEOS_NETWORK_INFO *out){
     if(!out)return EFI_INVALID_PARAMETER;
     ZeroMem(out,sizeof(*out));
@@ -696,6 +822,8 @@ EFI_STATUS steveos_kernel_boot(EFI_HANDLE image_handle,
     boot->uefi_launch_app = (UINT64)(UINTN)steveos_launch_app;
     boot->uefi_install_windows_app = (UINT64)(UINTN)steveos_install_windows_app;
     boot->uefi_run_windows_app = (UINT64)(UINTN)steveos_run_windows_app;
+    boot->uefi_update_check = (UINT64)(UINTN)steveos_update_check;
+    boot->uefi_update_apply = (UINT64)(UINTN)steveos_update_apply;
     boot->uefi_network_info = (UINT64)(UINTN)steveos_network_info;
     boot->backbuffer_base = backbuffer_addr;
     boot->backbuffer_size = fb_bytes64;
