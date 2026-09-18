@@ -1700,7 +1700,7 @@ static void handle_scan(uint8_t s){
         if(s>=2&&s<=7){file_filter=(int)(s-2);file_scroll=0;selected_file=-1;}
         else if(s==0x48||s==0x4B)move_file_selection(-1);
         else if(s==0x50||s==0x4D)move_file_selection(1);
-        else if(s==0x1C&&selected_file>=0){STEVEOS_BOOT_FILE*f=&boot_files[selected_file];if(file_matches(f)){if(f->kind==1)current_app=APP_IMAGE;else if(f->kind==2&&f->data){if(boot_name_is_html(f))browser_load_local_file(f);else load_text_file(f);}}}
+        else if(s==0x1C&&selected_file>=0){STEVEOS_BOOT_FILE*f=&boot_files[selected_file];if(file_matches(f)){if(f->kind==1)current_app=APP_IMAGE;else if(f->kind==4&&boot_info->uefi_run_windows_app){RUNWINDOWSAPP fn=(RUNWINDOWSAPP)(uintptr_t)boot_info->uefi_run_windows_app;fn(f->name);}else if(f->kind==2&&f->data){if(boot_name_is_html(f))browser_load_local_file(f);else load_text_file(f);}}}
         mark_dirty();return;
     }
     if(current_app==APP_SETTINGS){if(s==0x4B&&pointer_scale>1)pointer_scale--;else if(s==0x4D&&pointer_scale<4)pointer_scale++;else if(s==0x48&&accent_id>0)accent_id--;else if(s==0x50)accent_id=(uint8_t)((accent_id+1)&3u);native_pointer_set_scale(pointer_scale);mark_dirty();return;}
