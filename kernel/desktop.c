@@ -1109,9 +1109,26 @@ static void terminal_apps(void){
     for(int i=0;i<app_package_count;i++){char name[80];file_name(&boot_files[app_package_indices[i]],name,sizeof(name));terminal_add(name);}
 }
 
+static int parse_small_number(const char*s){
+    int v=0;int seen=0;
+    while(s&&*s>='0'&&*s<='9'){v=v*10+(*s-'0');s++;seen=1;if(v>99)v=99;}
+    return seen?v:-1;
+}
+static void terminal_app_action(const char*cmd,int run){
+    int n=parse_small_number(cmd);
+    scan_app_packages();
+    if(n<0||n>=app_package_count){terminal_add("BAD APP INDEX");return;}
+    app_package_pick=n;
+    if(run)app_launch_selected();else app_install_selected();
+}
+static void terminal_services(void){
+    terminal_add((service_flags&1)?"DISCORD: ARMED":"DISCORD: OFF");
+    terminal_add((service_flags&2)?"TAILSCALE: ARMED":"TAILSCALE: OFF");
+    terminal_add((service_flags&4)?"REMOTE SHELL: ARMED":"REMOTE SHELL: OFF");
+}
 static void terminal_exec(void){
     terminal_input[terminal_len]=0;
-    if(str_eq(terminal_input,"HELP"))terminal_add("HELP LS OPEN MEM NET NETTEST DISKS APPS STORE INSTALL SERVER ADVANCED SYSINFO VERSION BROWSE REFRESH CLEAR REBOOT HALT DATE");
+    if(str_eq(terminal_input,"HELP"))terminal_add("HELP LS OPEN MEM NET NETTEST DISKS APPS APP INSTALL APPGET STATUS SERVICES STORE INSTALL SERVER ADVANCED SYSINFO VERSION BROWSE REFRESH CLEAR REBOOT HALT DATE");
     else if(str_eq(terminal_input,"LS"))terminal_list();
     else if(begins_ci(terminal_input,"OPEN ")){size_t i=5;while(terminal_input[i]==' ')i++;terminal_open_file(terminal_input+i);}
     else if(str_eq(terminal_input,"MEM"))terminal_add("OPEN TASK MANAGER FOR LIVE MEMORY DETAILS");
@@ -1119,6 +1136,11 @@ static void terminal_exec(void){
     else if(str_eq(terminal_input,"NETTEST"))terminal_net_test();
     else if(str_eq(terminal_input,"DISKS"))terminal_disks();
     else if(str_eq(terminal_input,"APPS"))terminal_apps();
+    else if(begins_ci(terminal_input,"APP INSTALL ")){terminal_app_action(terminal_input+12,0);}
+    else if(begins_ci(terminal_input,"APP RUN ")){terminal_app_action(terminal_input+8,1);}
+    else if(begins_ci(terminal_input,"APPGET ")){size_t i=7,n=0;app_download_url[0]=0;while(terminal_input[i]&&n+1<BROWSER_URL_MAX)app_download_url[n++]=terminal_input[i++];app_download_url[n]=0;current_app=APP_STORE;app_download_focus=1;mark_dirty();}
+    else if(str_eq(terminal_input,"STATUS")){refresh_network_info();terminal_add(network_info_valid?(network_info.media_present?"NET LINK UP":"NET LINK DOWN"):"NET INFO OFF");terminal_services();}
+    else if(str_eq(terminal_input,"SERVICES"))terminal_services();
     else if(str_eq(terminal_input,"STORE")){current_app=APP_STORE;scan_app_packages();mark_dirty();}
     else if(str_eq(terminal_input,"INSTALL")){current_app=APP_INSTALLER;refresh_install_targets();mark_dirty();}
     else if(str_eq(terminal_input,"SERVER")){current_app=APP_SERVER;refresh_network_info();mark_dirty();}
@@ -1130,8 +1152,8 @@ static void terminal_exec(void){
     else if(begins_ci(terminal_input,"BROWSE ")){size_t i=7;while(terminal_input[i]==' ')i++;size_t n=0;browser_url[0]=0;if(!begins_ci(terminal_input+i,"http://")&&!begins_ci(terminal_input+i,"https://")){const char*p="http://";while(*p)browser_url[n++]=*p++;}while(terminal_input[i]&&n+1<BROWSER_URL_MAX)browser_url[n++]=terminal_input[i++];browser_url[n]=0;current_app=APP_BROWSER;browser_focus=0;browser_fetch();mark_dirty();}
     else if(str_eq(terminal_input,"REFRESH")){if(current_app==APP_BROWSER&&browser_url[0])browser_fetch();else mark_dirty();}
     else if(str_eq(terminal_input,"CLEAR"))terminal_count=0;
-    else if(str_eq(terminal_input,"REBOOT"))native_reboot();
-    else if(str_eq(terminal_input,"HALT"))native_halt();
+    else if(str_eq(terminal_input,"REBOOT")||str_eq(terminal_input,"RESTART"))native_reboot();
+    else if(str_eq(terminal_input,"HALT")||str_eq(terminal_input,"SHUTDOWN"))native_halt();
     else if(terminal_len)terminal_add("UNKNOWN COMMAND");
     terminal_len=0;terminal_input[0]=0;
 }
