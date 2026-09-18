@@ -1200,7 +1200,7 @@ static void terminal_open_file(const char*path){
                     RUNWINDOWSAPP fn=(RUNWINDOWSAPP)(uintptr_t)boot_info->uefi_run_windows_app;
                     fn(f->name);
                 }
-            }else if(f->kind==2&&f->data){if(boot_name_is_html(f))browser_load_local_file(f);else load_text_file(f);}
+            }else if(f->kind==4){if(boot_info->uefi_run_windows_app){RUNWINDOWSAPP fn=(RUNWINDOWSAPP)(uintptr_t)boot_info->uefi_run_windows_app;fn(f->name);}}else if(f->kind==2&&f->data){if(boot_name_is_html(f))browser_load_local_file(f);else load_text_file(f);}
             else current_app=APP_FILES;
             mark_dirty();
             return;
