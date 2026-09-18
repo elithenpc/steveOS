@@ -17,7 +17,8 @@
 enum {
     APP_DESKTOP, APP_BROWSER, APP_CALC, APP_EDITOR, APP_FILES, APP_IMAGE,
     APP_SETTINGS, APP_TASKS, APP_TERMINAL, APP_CALENDAR, APP_CONTROL,
-    APP_ABOUT, APP_SYSINFO, APP_DEVICES
+    APP_ABOUT, APP_SYSINFO, APP_DEVICES, APP_INSTALLER, APP_STORE,
+    APP_SERVER, APP_ADVANCED
 };
 
 typedef struct { uint32_t a,b,c,d; } GUID;
@@ -26,7 +27,12 @@ typedef uint64_t (__attribute__((ms_abi)) *SETVAR)(uint16_t*,GUID*,uint32_t,uint
 typedef uint64_t (__attribute__((ms_abi)) *GETTIME)(void*,void*);
 typedef uint64_t (__attribute__((ms_abi)) *HTTPGET)(const uint16_t*,char*,uint64_t,uint64_t*,uint32_t*);
 typedef uint64_t (__attribute__((ms_abi)) *WRITEFILE)(const uint16_t*,const void*,uint64_t);
-typedef struct { uint32_t magic; uint8_t light; uint8_t scale; uint8_t accent; uint8_t reserved0; uint16_t reserved; } SETTINGS;
+typedef uint64_t (__attribute__((ms_abi)) *LISTTARGETS)(STEVEOS_INSTALL_TARGET*,uint64_t);
+typedef uint64_t (__attribute__((ms_abi)) *INSTALLSELF)(uint64_t);
+typedef uint64_t (__attribute__((ms_abi)) *INSTALLAPP)(const uint16_t*);
+typedef uint64_t (__attribute__((ms_abi)) *LAUNCHAPP)(const uint16_t*);
+typedef uint64_t (__attribute__((ms_abi)) *NETINFO)(STEVEOS_NETWORK_INFO*);
+typedef struct { uint32_t magic; uint8_t light; uint8_t scale; uint8_t accent; uint8_t service_flags; uint8_t logging; uint8_t boot_delay; uint8_t reserved0; uint32_t reserved; } SETTINGS;
 
 typedef struct {
     uint16_t year;
@@ -54,6 +60,16 @@ static uint32_t width,height,stride;
 static uint64_t total_memory,largest_region;
 static int current_app=APP_DESKTOP,previous_app=APP_DESKTOP;
 static uint8_t pci_device_count;
+static STEVEOS_INSTALL_TARGET install_targets[16];
+static uint64_t install_target_count;
+static int install_target_pick=-1;
+static uint8_t install_armed;
+static int app_package_indices[24];
+static int app_package_count,app_package_pick=-1;
+static uint8_t app_install_done;
+static STEVEOS_NETWORK_INFO network_info;
+static uint8_t network_info_valid;
+static uint8_t service_flags,logging_level,boot_delay;
 typedef struct {uint8_t bus,dev,fn,class_code,subclass;uint16_t vendor,device;} PCI_VIEW;
 static PCI_VIEW pci_devices[24];
 static int selected_file=-1,file_scroll,file_filter;
@@ -213,16 +229,16 @@ static void memory_stats(void){
     }
 }
 static void load_settings(void){
-    light_theme=0;pointer_scale=1;
+    light_theme=0;pointer_scale=1;accent_id=0;service_flags=0;logging_level=0;boot_delay=3;
     if(boot_info->uefi_get_variable){
         GETVAR get=(GETVAR)(uintptr_t)boot_info->uefi_get_variable;uint32_t a=0;uint64_t z=sizeof(SETTINGS);SETTINGS s={0};
-        if(get((uint16_t*)settings_name,(GUID*)&settings_guid,&a,&z,&s)==0&&s.magic==0x53545654u){light_theme=s.light?1:0;pointer_scale=s.scale<1?1:(s.scale>4?4:s.scale);accent_id=s.accent&3u;}
+        if(get((uint16_t*)settings_name,(GUID*)&settings_guid,&a,&z,&s)==0&&s.magic==0x53545654u){light_theme=s.light?1:0;pointer_scale=s.scale<1?1:(s.scale>4?4:s.scale);accent_id=s.accent&3u;service_flags=s.service_flags;logging_level=s.logging;boot_delay=s.boot_delay>10?10:s.boot_delay;}
     }
     native_pointer_set_scale(pointer_scale);
 }
 static void save_settings(void){
     if(!boot_info->uefi_set_variable)return;
-    SETVAR set=(SETVAR)(uintptr_t)boot_info->uefi_set_variable;SETTINGS s={0x53545654u,light_theme,pointer_scale,accent_id,0,0};set((uint16_t*)settings_name,(GUID*)&settings_guid,7,sizeof(s),&s);
+    SETVAR set=(SETVAR)(uintptr_t)boot_info->uefi_set_variable;SETTINGS s={0x53545654u,light_theme,pointer_scale,accent_id,service_flags,logging_level,boot_delay,0,0};set((uint16_t*)settings_name,(GUID*)&settings_guid,7,sizeof(s),&s);
 }
 static void browser_copy_url(char*out,const char*in);
 static int browser_fetch(void);
@@ -282,6 +298,15 @@ static void save_note(void){
 }
 static void file_name(const STEVEOS_BOOT_FILE*f,char*out,size_t cap){size_t i=0;if(!cap)return;while(f&&i+1<cap&&i<STEVEOS_BOOT_FILE_NAME_MAX&&f->name[i]){uint16_t c=f->name[i++];out[i-1]=c<128?(char)c:'?';}out[i]=0;}
 static void load_text_file(STEVEOS_BOOT_FILE*f){if(!f||!f->data||!f->size)return;size_t n=(size_t)f->size;if(n>NOTE_MAX)n=NOTE_MAX;const uint8_t*d=(const uint8_t*)(uintptr_t)f->data;for(size_t i=0;i<n;i++)note[i]=(d[i]>=32||d[i]=='\n'||d[i]=='\t')?d[i]:' ';note[n]=0;note_len=n;note_cursor=n;note_dirty=0;current_app=APP_EDITOR;mark_dirty();}
+static void refresh_network_info(void){
+    network_info_valid=0;
+    if(!boot_info->uefi_network_info)return;
+    NETINFO fn=(NETINFO)(uintptr_t)boot_info->uefi_network_info;
+    if(fn(&network_info)==0)network_info_valid=1;
+}
+static const char*service_state(uint8_t bit){
+    return (service_flags&bit)?"ARMED":"OFF";
+}
 static void panel(void){
     fill_rect(0,0,(int)width,(int)height,bg_color());
     fill_rect(0,0,(int)width,42,light_theme?0xDCE3E7u:0x151D26u);
