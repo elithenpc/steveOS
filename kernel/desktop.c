@@ -1089,15 +1089,42 @@ static void terminal_list(void){
     if(boot_info->boot_file_count>6)terminal_add("... USE FILE MANAGER FOR MORE");
 }
 
+static void terminal_net_test(void){
+    if(!boot_info->uefi_http_get){terminal_add("NO UEFI HTTP SERVICE");return;}
+    HTTPGET get=(HTTPGET)(uintptr_t)boot_info->uefi_http_get;
+    const char*plain="http://example.com/";
+    uint16_t url[32];size_t n=0;while(plain[n]&&n+1<sizeof(url)/sizeof(url[0])){url[n]=(uint16_t)(unsigned char)plain[n];n++;}url[n]=0;
+    char out[64];uint64_t len=0;uint32_t status=0;uint64_t st=get(url,out,sizeof(out)-1,&len,&status);
+    if(st==0)terminal_add(status>=200&&status<500?"INTERNET TEST PASSED":"HTTP SERVER REPLIED WITH ERROR");
+    else terminal_add("INTERNET TEST FAILED");
+}
+static void terminal_disks(void){
+    refresh_install_targets();
+    if(!install_target_count){terminal_add("NO OTHER EFI VOLUMES FOUND");return;}
+    for(uint64_t i=0;i<install_target_count&&i<8;i++){terminal_add(install_targets[i].removable?"REMOVABLE VOLUME":"INTERNAL VOLUME");}
+}
+static void terminal_apps(void){
+    scan_app_packages();
+    if(!app_package_count){terminal_add("NO EFI APP PACKAGES IN \\Apps");return;}
+    for(int i=0;i<app_package_count;i++){char name[80];file_name(&boot_files[app_package_indices[i]],name,sizeof(name));terminal_add(name);}
+}
+
 static void terminal_exec(void){
     terminal_input[terminal_len]=0;
-    if(str_eq(terminal_input,"HELP"))terminal_add("HELP LS OPEN MEM APPS SYSINFO VERSION BROWSE REFRESH CLEAR REBOOT HALT DATE");
+    if(str_eq(terminal_input,"HELP"))terminal_add("HELP LS OPEN MEM NET NETTEST DISKS APPS STORE INSTALL SERVER ADVANCED SYSINFO VERSION BROWSE REFRESH CLEAR REBOOT HALT DATE");
     else if(str_eq(terminal_input,"LS"))terminal_list();
     else if(begins_ci(terminal_input,"OPEN ")){size_t i=5;while(terminal_input[i]==' ')i++;terminal_open_file(terminal_input+i);}
-    else if(str_eq(terminal_input,"MEM"))terminal_add("TASKS SHOW LIVE MEMORY TOTAL AND LARGEST REGION");
-    else if(str_eq(terminal_input,"APPS"))terminal_add("WEB CALC NOTE FILES IMAGE SETTINGS TASKS TERM DATE CONTROL ABOUT SYSINFO");
+    else if(str_eq(terminal_input,"MEM"))terminal_add("OPEN TASK MANAGER FOR LIVE MEMORY DETAILS");
+    else if(str_eq(terminal_input,"NET")){refresh_network_info();if(network_info_valid)terminal_add(network_info.media_present?"NETWORK LINK PRESENT":"NETWORK LINK DOWN");else terminal_add("NETWORK INFO UNAVAILABLE");}
+    else if(str_eq(terminal_input,"NETTEST"))terminal_net_test();
+    else if(str_eq(terminal_input,"DISKS"))terminal_disks();
+    else if(str_eq(terminal_input,"APPS"))terminal_apps();
+    else if(str_eq(terminal_input,"STORE")){current_app=APP_STORE;scan_app_packages();mark_dirty();}
+    else if(str_eq(terminal_input,"INSTALL")){current_app=APP_INSTALLER;refresh_install_targets();mark_dirty();}
+    else if(str_eq(terminal_input,"SERVER")){current_app=APP_SERVER;refresh_network_info();mark_dirty();}
+    else if(str_eq(terminal_input,"ADVANCED")){current_app=APP_ADVANCED;refresh_network_info();mark_dirty();}
     else if(str_eq(terminal_input,"SYSINFO")){current_app=APP_SYSINFO;mark_dirty();}
-    else if(str_eq(terminal_input,"VERSION"))terminal_add("STEVEOS NATIVE DESKTOP 0.9");
+    else if(str_eq(terminal_input,"VERSION"))terminal_add("STEVEOS NATIVE DESKTOP 0.9+");
     else if(str_eq(terminal_input,"DATE")){current_app=APP_CALENDAR;mark_dirty();}
     else if(str_eq(terminal_input,"BROWSE")){current_app=APP_BROWSER;browser_focus=1;mark_dirty();}
     else if(begins_ci(terminal_input,"BROWSE ")){size_t i=7;while(terminal_input[i]==' ')i++;size_t n=0;browser_url[0]=0;if(!begins_ci(terminal_input+i,"http://")&&!begins_ci(terminal_input+i,"https://")){const char*p="http://";while(*p)browser_url[n++]=*p++;}while(terminal_input[i]&&n+1<BROWSER_URL_MAX)browser_url[n++]=terminal_input[i++];browser_url[n]=0;current_app=APP_BROWSER;browser_focus=0;browser_fetch();mark_dirty();}
