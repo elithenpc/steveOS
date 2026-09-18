@@ -57,6 +57,7 @@ typedef struct {
     uint64_t uefi_list_install_targets;
     uint64_t uefi_install_self;
     uint64_t uefi_install_app;
+    uint64_t uefi_launch_app;
     uint64_t uefi_network_info;
     uint64_t boot_files;
     uint64_t boot_file_count;
