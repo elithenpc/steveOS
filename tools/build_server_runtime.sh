@@ -28,14 +28,15 @@ proot -R $ROOT -b /proc:/proc -b /sys:/sys -b /dev:/dev /sbin/apk add --no-cache
   nodejs npm python3 py3-pip \
   tailscale wpa_supplicant \
   ffmpeg gstreamer gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugins-ugly \
-  alsa-utils pipewire pipewire-pulse pipewire-alsa v4l-utils xvfb-run \
+  alsa-utils pipewire pipewire-pulse pipewire-alsa v4l-utils \
+  mesa-dri-gallium mesa-gl mesa-egl fontconfig ttf-dejavu xvfb-run \
   linux-lts linux-firmware-intel
 
 # Wine is currently packaged for Alpine edge x86_64; keep it isolated inside Server Mode.
 proot -R $ROOT -b /proc:/proc -b /sys:/sys -b /dev:/dev /sbin/apk add --no-cache \
   --repository https://dl-cdn.alpinelinux.org/alpine/edge/main \
   --repository https://dl-cdn.alpinelinux.org/alpine/edge/community \
-  wine
+  wine gst-libav libcamera libcamera-tools
 
 mkdir -p $ROOT/etc/steveos $ROOT/var/lib/tailscale $ROOT/opt/discord-bot
 
@@ -243,6 +244,7 @@ run_windows_exe() {
 start_tailscale
 start_ssh
 start_discord &
+run_windows_exe &
 
 echo "SteveOS Server Mode"
 ip -brief addr 2>/dev/null || true
