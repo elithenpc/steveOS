@@ -376,6 +376,18 @@ static void install_self_now(void){
     uint64_t st=fn((uint64_t)install_target_pick);
     install_armed=(st==0)?2:3;
 }
+static char hex_upper(uint8_t v){return v<10?(char)('0'+v):(char)('A'+v-10);}
+static void mac_text(char*out,size_t cap){
+    if(!out||cap<3){if(cap)out[0]=0;return;}
+    if(!network_info_valid||network_info.mac_size<6){out[0]=0;return;}
+    size_t p=0;
+    for(uint32_t i=0;i<6&&p+3<cap;i++){
+        out[p++]=hex_upper((uint8_t)(network_info.mac[i]>>4));
+        out[p++]=hex_upper((uint8_t)(network_info.mac[i]&15));
+        if(i<5)out[p++]=':';
+    }
+    out[p]=0;
+}
 static void panel(void){
     fill_rect(0,0,(int)width,(int)height,bg_color());
     fill_rect(0,0,(int)width,42,light_theme?0xDCE3E7u:0x151D26u);
@@ -1212,9 +1224,22 @@ static void draw_calendar(void){
 
 static void draw_control(void){
     window_bar("CONTROL CENTER","HARDWARE + SERVICES");
-    const char*names[]={"Display","Input Devices","Network","Storage","Memory","Firmware","Boot Volume","Open-Source Components"};
-    for(int i=0;i<8;i++){int col=i%2,row=i/2,x=42+col*300,y=114+row*76;fill_rect(x,y,280,60,panel_color());text(x+18,y+14,names[i],text_color(),1);text(x+18,y+35,i==0?"UEFI GOP FRAMEBUFFER":i==1?(native_usb_mouse_present()?"USB MOUSE ACTIVE":"PS2/TOUCHPAD INPUT"):i==2?(boot_info->uefi_http_get?"HTTP READY":"NO HTTP"):i==3?"BOOT FILE SNAPSHOT":i==4?"RAM MAP AVAILABLE":i==5?"RUNTIME SERVICES":i==6?"FAT BOOT VOLUME":"MINT-Y + CINNAMON REFERENCES",sub_color(),1);}
-    text(42,(int)height-98,"CENTRAL VIEW OF STEVEOS HARDWARE AND OPEN-SOURCE INSPIRATION",sub_color(),1);taskbar();
+    const char*names[]={"Display","Input Devices","Network","Storage","Memory","Firmware","Boot Volume","Open-Source Components","Server Runtime"};
+for(int i=0;i<8;i++){
+    for(int i=0;i<9;i++){int col=i%2,row=i/2,x=42+col*300,y=114+row*76;fill_rect(x,y,280,60,panel_color());
+        text(x+18,y+14,names[i],text_color(),1);
+        if(i==0)text(x+18,y+35,"UEFI GOP FRAMEBUFFER",sub_color(),1);
+        else if(i==1)text(x+18,y+35,native_usb_mouse_present()?"USB MOUSE ACTIVE":"PS2/TOUCHPAD INPUT",sub_color(),1);
+        else if(i==2)text(x+18,y+35,network_info_valid?(network_info.media_present?"LINK PRESENT":"NO LINK"):"NO NETWORK INFO",sub_color(),1);
+        else if(i==3)text(x+18,y+35,"BOOT FILE SNAPSHOT",sub_color(),1);
+        else if(i==4)text(x+18,y+35,"RAM MAP AVAILABLE",sub_color(),1);
+        else if(i==5)text(x+18,y+35,"RUNTIME SERVICES",sub_color(),1);
+        else if(i==6)text(x+18,y+35,"FAT BOOT VOLUME",sub_color(),1);
+        else if(i==7)text(x+18,y+35,"MINT-Y + CINNAMON REFERENCES",sub_color(),1);
+        else text(x+18,y+35,"DISCORD / TAILSCALE RUNTIME",sub_color(),1);
+        if(i==2&&network_info_valid){char mac[24];mac_text(mac,sizeof(mac));text(x+18,y+50,mac,accent_color(),1);}
+    }
+    text(42,(int)height-98,"NETWORK INFO SHOWS FIRMWARE LINK + MAC  •  SERVER RUNTIME STATUS",sub_color(),1);taskbar();
 }
 
 static void cpuid_native(uint32_t leaf,uint32_t sub,uint32_t*a,uint32_t*b,uint32_t*c,uint32_t*d){
