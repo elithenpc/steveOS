@@ -350,8 +350,8 @@ static EFI_STATUS steveos_install_server_files(EFI_HANDLE target){
     st=uefi_call_wrapper(dst_root->Open,5,dst_root,&steveos_dir,L"SteveOS",EFI_FILE_MODE_READ|EFI_FILE_MODE_WRITE|EFI_FILE_MODE_CREATE,EFI_FILE_DIRECTORY);
     if(!EFI_ERROR(st))st=uefi_call_wrapper(steveos_dir->Open,5,steveos_dir,&server_dir,L"Server",EFI_FILE_MODE_READ|EFI_FILE_MODE_WRITE|EFI_FILE_MODE_CREATE,EFI_FILE_DIRECTORY);
     if(EFI_ERROR(st)){if(steveos_dir)uefi_call_wrapper(steveos_dir->Close,1,steveos_dir);uefi_call_wrapper(dst_root->Close,1,dst_root);uefi_call_wrapper(src_root->Close,1,src_root);return st;}
-    static const CHAR16 *files[]={L"\\SteveOS\\Server\\ServerBoot.efi",L"\\SteveOS\\Server\\vmlinuz-virt",L"\\SteveOS\\Server\\server-initramfs.img",L"\\SteveOS\\Server\\server.conf"};
-    static const CHAR16 *dst[]={L"ServerBoot.efi",L"vmlinuz-virt",L"server-initramfs.img",L"server.conf"};
+    static const CHAR16 *files[]={L"\\SteveOS\\Server\\ServerBoot.efi",L"\\SteveOS\\Server\\vmlinuz-lts",L"\\SteveOS\\Server\\server-initramfs.img",L"\\SteveOS\\Server\\server.conf"};
+    static const CHAR16 *dst[]={L"ServerBoot.efi",L"vmlinuz-lts",L"server-initramfs.img",L"server.conf"};
     for(UINTN i=0;i<4&&!EFI_ERROR(st);i++){
         VOID *buf=NULL;UINTN size=0;
         st=steveos_fs_read_file(src_root,(CHAR16*)files[i],&buf,&size);
