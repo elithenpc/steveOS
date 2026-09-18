@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-ALPINE_VERSION=3.24.1
+ALPINE_VERSION=3.24.2
 ARCH=x86_64
 BASE_URL=https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/$ARCH
 WORK=build/server
@@ -22,10 +22,20 @@ printf '%s\n' \
 cp /etc/resolv.conf $ROOT/etc/resolv.conf || true
 
 proot -R $ROOT -b /proc:/proc -b /sys:/sys -b /dev:/dev /sbin/apk add --no-cache \
-  ca-certificates curl git openssh-server \
+  bash coreutils findutils grep sed gawk util-linux pciutils usbutils procps \
+  ca-certificates curl wget git openssh-server \
   iproute2 iptables kmod \
   nodejs npm python3 py3-pip \
-  tailscale wpa_supplicant wine xvfb-run linux-virt linux-firmware-intel
+  tailscale wpa_supplicant \
+  ffmpeg gstreamer gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugins-ugly \
+  alsa-utils pipewire pipewire-pulse pipewire-alsa v4l-utils xvfb-run \
+  linux-lts linux-firmware-intel
+
+# Wine is currently packaged for Alpine edge x86_64; keep it isolated inside Server Mode.
+proot -R $ROOT -b /proc:/proc -b /sys:/sys -b /dev:/dev /sbin/apk add --no-cache \
+  --repository https://dl-cdn.alpinelinux.org/alpine/edge/main \
+  --repository https://dl-cdn.alpinelinux.org/alpine/edge/community \
+  wine
 
 mkdir -p $ROOT/etc/steveos $ROOT/var/lib/tailscale $ROOT/opt/discord-bot
 
@@ -90,7 +100,7 @@ mount -t devpts devpts /dev/pts -o gid=5,mode=620 2>/dev/null || true
 mdev -s 2>/dev/null || true
 [ -e /dev/net/tun ] || mknod /dev/net/tun c 10 200 2>/dev/null || true
 
-for mod in tun e1000e r8169 igc iwlwifi; do
+for mod in tun e1000e r8169 igc iwlwifi uvcvideo snd_hda_intel snd_usb_audio i915 nvme ahci btusb; do
     modprobe "$mod" 2>/dev/null || true
 done
 
@@ -240,12 +250,22 @@ echo "Discord: $DISCORD_ENABLE"
 echo "Tailscale: $TAILSCALE_ENABLE"
 echo "SSH: $SSH_ENABLE"
 echo "Windows EXE runtime: Wine + Xvfb"
+echo "Multimedia: FFmpeg + GStreamer + ALSA + PipeWire"
+echo "Camera: V4L2 /dev/video*"
+echo "Microphone: ALSA/PipeWire /dev/snd"
+{
+    echo "STEVEOS MEDIA STATUS"
+    echo "VIDEO:"
+    ls -1 /dev/video* 2>/dev/null || echo "NONE"
+    echo "AUDIO:"
+    ls -1 /dev/snd 2>/dev/null || echo "NONE"
+} > /efi/SteveOS/Server/media-status.txt 2>/dev/null || true
 
 exec /bin/sh
 EOF
 
 chmod +x $ROOT/init
-cp $ROOT/boot/vmlinuz-virt $WORK/vmlinuz-virt
+cp $ROOT/boot/vmlinuz-lts $WORK/vmlinuz-lts
 
 (
   cd $ROOT
@@ -257,7 +277,7 @@ set timeout=2
 set default=0
 search --file --set=root /SteveOS/Server/server-initramfs.img
 menuentry "SteveOS Server Mode" {
-    linux /SteveOS/Server/vmlinuz-virt
+    linux /SteveOS/Server/vmlinuz-lts
     initrd /SteveOS/Server/server-initramfs.img
 }
 EOF
