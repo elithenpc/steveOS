@@ -1256,8 +1256,9 @@ static void draw_calendar(void){
 static void draw_control(void){
     window_bar("CONTROL CENTER","HARDWARE + SERVICES");
     const char*names[]={"Display","Input Devices","Network","Storage","Memory","Firmware","Boot Volume","Open-Source Components","Server Runtime"};
-for(int i=0;i<8;i++){
-    for(int i=0;i<9;i++){int col=i%2,row=i/2,x=42+col*300,y=114+row*76;fill_rect(x,y,280,60,panel_color());
+    for(int i=0;i<9;i++){
+        int col=i%2,row=i/2,x=42+col*300,y=114+row*76;
+        fill_rect(x,y,280,60,panel_color());
         text(x+18,y+14,names[i],text_color(),1);
         if(i==0)text(x+18,y+35,"UEFI GOP FRAMEBUFFER",sub_color(),1);
         else if(i==1)text(x+18,y+35,native_usb_mouse_present()?"USB MOUSE ACTIVE":"PS2/TOUCHPAD INPUT",sub_color(),1);
@@ -1270,7 +1271,8 @@ for(int i=0;i<8;i++){
         else text(x+18,y+35,"DISCORD / TAILSCALE RUNTIME",sub_color(),1);
         if(i==2&&network_info_valid){char mac[24];mac_text(mac,sizeof(mac));text(x+18,y+50,mac,accent_color(),1);}
     }
-    text(42,(int)height-98,"NETWORK INFO SHOWS FIRMWARE LINK + MAC  •  SERVER RUNTIME STATUS",sub_color(),1);taskbar();
+    text(42,(int)height-98,"NETWORK INFO SHOWS FIRMWARE LINK + MAC  •  SERVER RUNTIME STATUS",sub_color(),1);
+    taskbar();
 }
 
 static void cpuid_native(uint32_t leaf,uint32_t sub,uint32_t*a,uint32_t*b,uint32_t*c,uint32_t*d){
