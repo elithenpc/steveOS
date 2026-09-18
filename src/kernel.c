@@ -586,7 +586,7 @@ EFI_STATUS steveos_run_windows_app(const CHAR16 *source_path){
 
     const CHAR16 *name=steveos_basename(source_path);
     CHAR8 cfg[256];UINTN p=0;
-    const char *prefix="EXE_AUTORUN=/efi/SteveOS/Apps/";
+    const char *prefix="EXE_ENABLE=1\nEXE_AUTORUN=/efi/SteveOS/Apps/";
     for(UINTN i=0;prefix[i]&&p+1<sizeof(cfg);i++)cfg[p++]=(CHAR8)prefix[i];
     for(UINTN i=0;name[i]&&p+1<sizeof(cfg)-2;i++)cfg[p++]=(CHAR8)(name[i]<128?name[i]:'_');
     cfg[p++]='\n';cfg[p]=0;
