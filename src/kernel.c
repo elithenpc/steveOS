@@ -13,6 +13,8 @@ static EFI_HANDLE steveos_image_handle;
 static EFI_STATUS steveos_install_self(UINT64 target_index);
 static EFI_STATUS steveos_install_server(UINT64 target_index);
 static EFI_STATUS steveos_launch_app(const CHAR16 *path);
+static EFI_STATUS steveos_install_windows_app(const CHAR16 *source_path);
+static EFI_STATUS steveos_run_windows_app(const CHAR16 *source_path);
 
 typedef void (*STEVEOS_NATIVE_ENTRY)(STEVEOS_BOOT_INFO *boot, void *stack_top);
 #define STEVEOS_KERNEL_LOAD_ADDRESS 0x00200000ULL
@@ -414,10 +416,28 @@ static BOOLEAN steveos_is_efi_name(const CHAR16 *name){
            (name[n-2]==L'f'||name[n-2]==L'F')&&
            (name[n-1]==L'i'||name[n-1]==L'I');
 }
+static BOOLEAN steveos_is_exe_name(const CHAR16 *name){
+    if(!name)return FALSE;
+    UINTN n=0;while(name[n])n++;
+    return n>=4&&name[n-4]==L'.'&&
+           (name[n-3]==L'e'||name[n-3]==L'E')&&
+           (name[n-2]==L'x'||name[n-2]==L'X')&&
+           (name[n-1]==L'e'||name[n-1]==L'E');
+}
+static BOOLEAN steveos_is_windows_safe_name(const CHAR16 *name){
+    if(!name||!name[0])return FALSE;
+    for(UINTN i=0;name[i];i++){
+        CHAR16 c=name[i];
+        if((c>=L'A'&&c<=L'Z')||(c>=L'a'&&c<=L'z')||(c>=L'0'&&c<=L'9')||
+           c==L'.'||c==L'_'||c==L'-'||c==L' ')continue;
+        return FALSE;
+    }
+    return TRUE;
+}
 EFI_STATUS steveos_install_app(const CHAR16 *source_path){
     if(!source_path||!steveos_boot_device)return EFI_INVALID_PARAMETER;
     const CHAR16*name=steveos_basename(source_path);
-    if(!name||!name[0]||!steveos_is_efi_name(name))return EFI_INVALID_PARAMETER;
+    if(!name||!name[0]||(!steveos_is_efi_name(name)&&!steveos_is_exe_name(name)))return EFI_INVALID_PARAMETER;
     EFI_FILE_PROTOCOL *root=NULL,*apps=NULL,*src=NULL,*dst=NULL;EFI_STATUS st;
     st=steveos_fs_open_volume(steveos_boot_device,&root);if(EFI_ERROR(st))return st;
     st=uefi_call_wrapper(root->Open,5,root,&src,source_path,EFI_FILE_MODE_READ,0);
@@ -440,7 +460,8 @@ EFI_STATUS steveos_install_app(const CHAR16 *source_path){
 }
 
 EFI_STATUS steveos_download_app(const CHAR16 *url,const CHAR16 *filename){
-    if(!url||!filename||!steveos_boot_device||!steveos_is_efi_name(filename))return EFI_INVALID_PARAMETER;
+    if(!url||!filename||!steveos_boot_device||
+       (!steveos_is_efi_name(filename)&&!steveos_is_exe_name(filename)))return EFI_INVALID_PARAMETER;
     CHAR8 *data=AllocatePool(1024*1024);
     if(!data)return EFI_OUT_OF_RESOURCES;
     UINTN len=0;UINT32 status=0;
@@ -484,6 +505,44 @@ static EFI_STATUS steveos_launch_app(const CHAR16 *path){
     if(EFI_ERROR(st)||!child)return st;
     st=uefi_call_wrapper(BS->StartImage,3,child,NULL,NULL);
     return st;
+}
+
+EFI_STATUS steveos_install_windows_app(const CHAR16 *source_path){
+    if(!source_path||!steveos_boot_device||!steveos_is_exe_name(steveos_basename(source_path))||
+       !steveos_is_windows_safe_name(steveos_basename(source_path)))return EFI_INVALID_PARAMETER;
+    EFI_STATUS st=steveos_install_app(source_path);
+    return st;
+}
+
+EFI_STATUS steveos_run_windows_app(const CHAR16 *source_path){
+    if(!source_path||!steveos_boot_device||!steveos_is_exe_name(steveos_basename(source_path))||
+       !steveos_is_windows_safe_name(steveos_basename(source_path)))return EFI_INVALID_PARAMETER;
+
+    EFI_FILE_PROTOCOL *root=NULL,*server=NULL,*probe=NULL;
+    st:
+    ;
+    EFI_STATUS st=steveos_fs_open_volume(steveos_boot_device,&root);
+    if(EFI_ERROR(st))return st;
+    st=uefi_call_wrapper(root->Open,5,root,&server,L"SteveOS\\Server",EFI_FILE_MODE_READ|EFI_FILE_MODE_WRITE,EFI_FILE_DIRECTORY);
+    if(EFI_ERROR(st)){uefi_call_wrapper(root->Close,1,root);return EFI_NOT_FOUND;}
+    st=uefi_call_wrapper(server->Open,5,server,&probe,L"ServerBoot.efi",EFI_FILE_MODE_READ,0);
+    if(EFI_ERROR(st)){uefi_call_wrapper(server->Close,1,server);uefi_call_wrapper(root->Close,1,root);return EFI_NOT_FOUND;}
+    uefi_call_wrapper(probe->Close,1,probe);
+
+    st=steveos_install_windows_app(source_path);
+    if(EFI_ERROR(st)){uefi_call_wrapper(server->Close,1,server);uefi_call_wrapper(root->Close,1,root);return st;}
+
+    const CHAR16 *name=steveos_basename(source_path);
+    CHAR8 cfg[256];UINTN p=0;
+    const char *prefix="EXE_AUTORUN=/efi/SteveOS/Apps/";
+    for(UINTN i=0;prefix[i]&&p+1<sizeof(cfg);i++)cfg[p++]=(CHAR8)prefix[i];
+    for(UINTN i=0;name[i]&&p+1<sizeof(cfg)-2;i++)cfg[p++]=(CHAR8)(name[i]<128?name[i]:'_');
+    cfg[p++]='\n';cfg[p]=0;
+    st=steveos_write_boot_text(L"\\SteveOS\\Server\\run-exe.conf",cfg,p);
+    uefi_call_wrapper(server->Close,1,server);
+    uefi_call_wrapper(root->Close,1,root);
+    if(EFI_ERROR(st))return st;
+    return steveos_launch_server();
 }
 
 EFI_STATUS steveos_network_info(STEVEOS_NETWORK_INFO *out){
@@ -584,6 +643,8 @@ EFI_STATUS steveos_kernel_boot(EFI_HANDLE image_handle,
     boot->uefi_install_app = (UINT64)(UINTN)steveos_install_app;
     boot->uefi_download_app = (UINT64)(UINTN)steveos_download_app;
     boot->uefi_launch_app = (UINT64)(UINTN)steveos_launch_app;
+    boot->uefi_install_windows_app = (UINT64)(UINTN)steveos_install_windows_app;
+    boot->uefi_run_windows_app = (UINT64)(UINTN)steveos_run_windows_app;
     boot->uefi_network_info = (UINT64)(UINTN)steveos_network_info;
     boot->backbuffer_base = backbuffer_addr;
     boot->backbuffer_size = fb_bytes64;
