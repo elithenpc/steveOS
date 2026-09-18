@@ -1189,9 +1189,24 @@ static void terminal_services(void){
     terminal_add((service_flags&2)?"TAILSCALE: ARMED":"TAILSCALE: OFF");
     terminal_add((service_flags&4)?"REMOTE SHELL: ARMED":"REMOTE SHELL: OFF");
 }
+static void terminal_service_set(const char*name,int bit,int on){
+    if(str_eq(name,"DISCORD")){if(on)service_flags|=1;else service_flags&=(uint8_t)~1u;}
+    else if(str_eq(name,"TAILSCALE")){if(on)service_flags|=2;else service_flags&=(uint8_t)~2u;}
+    else if(str_eq(name,"SSH")){if(on)service_flags|=4;else service_flags&=(uint8_t)~4u;}
+    else {terminal_add("UNKNOWN SERVICE");return;}
+    save_settings();
+    terminal_add(on?"SERVICE ARMED":"SERVICE DISABLED");
+    (void)bit;
+}
+static void terminal_server_boot(void){
+    if(!boot_info->uefi_launch_server){terminal_add("SERVER BOOT BRIDGE UNAVAILABLE");return;}
+    if(!server_runtime_detected()){terminal_add("SERVER RUNTIME NOT INSTALLED");return;}
+    LAUNCHSERVER fn=(LAUNCHSERVER)(uintptr_t)boot_info->uefi_launch_server;
+    fn();
+}
 static void terminal_exec(void){
     terminal_input[terminal_len]=0;
-    if(str_eq(terminal_input,"HELP"))terminal_add("HELP LS OPEN MEM NET NETTEST DISKS APPS APP INSTALL APPGET STATUS SERVICES STORE INSTALL SERVER ADVANCED SYSINFO VERSION BROWSE REFRESH CLEAR REBOOT HALT DATE");
+    if(str_eq(terminal_input,"HELP"))terminal_add("HELP LS OPEN MEM NET NETTEST DISKS APPS APP INSTALL APPGET STATUS SERVICES SERVICE SERVER SERVER BOOT SERVER CONFIG STORE INSTALL ADVANCED SYSINFO VERSION BROWSE REFRESH CLEAR REBOOT HALT DATE");
     else if(str_eq(terminal_input,"LS"))terminal_list();
     else if(begins_ci(terminal_input,"OPEN ")){size_t i=5;while(terminal_input[i]==' ')i++;terminal_open_file(terminal_input+i);}
     else if(str_eq(terminal_input,"MEM"))terminal_add("OPEN TASK MANAGER FOR LIVE MEMORY DETAILS");
@@ -1204,6 +1219,14 @@ static void terminal_exec(void){
     else if(begins_ci(terminal_input,"APPGET ")){size_t i=7,n=0;app_download_url[0]=0;while(terminal_input[i]&&n+1<BROWSER_URL_MAX)app_download_url[n++]=terminal_input[i++];app_download_url[n]=0;current_app=APP_STORE;app_download_focus=1;mark_dirty();}
     else if(str_eq(terminal_input,"STATUS")){refresh_network_info();terminal_add(network_info_valid?(network_info.media_present?"NET LINK UP":"NET LINK DOWN"):"NET INFO OFF");terminal_services();}
     else if(str_eq(terminal_input,"SERVICES"))terminal_services();
+    else if(str_eq(terminal_input,"SERVICE DISCORD ON"))terminal_service_set("DISCORD",1,1);
+    else if(str_eq(terminal_input,"SERVICE DISCORD OFF"))terminal_service_set("DISCORD",1,0);
+    else if(str_eq(terminal_input,"SERVICE TAILSCALE ON"))terminal_service_set("TAILSCALE",2,1);
+    else if(str_eq(terminal_input,"SERVICE TAILSCALE OFF"))terminal_service_set("TAILSCALE",2,0);
+    else if(str_eq(terminal_input,"SERVICE SSH ON"))terminal_service_set("SSH",4,1);
+    else if(str_eq(terminal_input,"SERVICE SSH OFF"))terminal_service_set("SSH",4,0);
+    else if(str_eq(terminal_input,"SERVER BOOT"))terminal_server_boot();
+    else if(str_eq(terminal_input,"SERVER CONFIG"))open_server_config();
     else if(str_eq(terminal_input,"STORE")){current_app=APP_STORE;scan_app_packages();mark_dirty();}
     else if(str_eq(terminal_input,"INSTALL")){current_app=APP_INSTALLER;refresh_install_targets();mark_dirty();}
     else if(str_eq(terminal_input,"SERVER")){current_app=APP_SERVER;refresh_network_info();mark_dirty();}
