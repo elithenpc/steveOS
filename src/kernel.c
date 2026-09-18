@@ -218,6 +218,143 @@ static EFI_STATUS snapshot_boot_files(EFI_HANDLE image_handle, STEVEOS_BOOT_INFO
     return EFI_SUCCESS;
 }
 
+typedef struct {
+    EFI_HANDLE handle;
+    UINT64 blocks;
+    UINT32 block_size;
+    BOOLEAN removable;
+    BOOLEAN present;
+} STEVEOS_TARGET_INTERNAL;
+
+static EFI_STATUS steveos_target_handles(STEVEOS_TARGET_INTERNAL *out,UINTN cap,UINTN *count){
+    if(!out||!count)return EFI_INVALID_PARAMETER;
+    *count=0;
+    UINTN sz=0;EFI_HANDLE *handles=NULL;
+    EFI_STATUS st=uefi_call_wrapper(BS->LocateHandle,5,ByProtocol,&gEfiSimpleFileSystemProtocolGuid,NULL,&sz,NULL);
+    if(st!=EFI_BUFFER_TOO_SMALL)return st;
+    handles=AllocatePool(sz);if(!handles)return EFI_OUT_OF_RESOURCES;
+    st=uefi_call_wrapper(BS->LocateHandle,5,ByProtocol,&gEfiSimpleFileSystemProtocolGuid,NULL,&sz,handles);
+    if(!EFI_ERROR(st)){
+        UINTN total=sz/sizeof(EFI_HANDLE);
+        for(UINTN i=0;i<total&&*count<cap;i++){
+            if(handles[i]==steveos_boot_device)continue;
+            EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *fs=NULL;
+            EFI_BLOCK_IO_PROTOCOL *bio=NULL;
+            if(EFI_ERROR(uefi_call_wrapper(BS->HandleProtocol,3,handles[i],&gEfiSimpleFileSystemProtocolGuid,(VOID**)&fs))||!fs)continue;
+            if(EFI_ERROR(uefi_call_wrapper(BS->HandleProtocol,3,handles[i],&gEfiBlockIoProtocolGuid,(VOID**)&bio))||!bio||!bio->Media||!bio->Media->MediaPresent)continue;
+            STEVEOS_TARGET_INTERNAL*t=&out[*count];
+            t->handle=handles[i];
+            t->blocks=(UINT64)bio->Media->LastBlock+1ULL;
+            t->block_size=(UINT32)bio->Media->BlockSize;
+            t->removable=bio->Media->RemovableMedia;
+            t->present=bio->Media->MediaPresent;
+            (*count)++;
+        }
+    }
+    FreePool(handles);
+    return st;
+}
+
+UINT64 steveos_list_install_targets(STEVEOS_INSTALL_TARGET *out,UINT64 capacity){
+    if(!out||capacity==0)return 0;
+    STEVEOS_TARGET_INTERNAL tmp[32];UINTN cap=capacity>32?32:(UINTN)capacity,count=0;
+    if(EFI_ERROR(steveos_target_handles(tmp,cap,&count)))return 0;
+    for(UINTN i=0;i<count;i++){
+        ZeroMem(&out[i],sizeof(out[i]));
+        out[i].handle=(UINT64)(UINTN)tmp[i].handle;
+        out[i].blocks=tmp[i].blocks;
+        out[i].block_size=tmp[i].block_size;
+        out[i].removable=tmp[i].removable?1:0;
+        out[i].present=tmp[i].present?1:0;
+        out[i].filesystem=1;
+    }
+    return (UINT64)count;
+}
+
+EFI_STATUS steveos_install_self(UINT64 target_index){
+    STEVEOS_TARGET_INTERNAL tmp[32];UINTN count=0;
+    if(EFI_ERROR(steveos_target_handles(tmp,32,&count))||target_index>=count)return EFI_NOT_FOUND;
+    VOID *data=(VOID*)_binary_build_native_kernel_raw_start;
+    (void)data;
+    EFI_FILE_PROTOCOL *src=NULL,*root=NULL,*ed=NULL,*bd=NULL,*f=NULL;
+    EFI_STATUS st=steveos_fs_open_volume(steveos_boot_device,&src);
+    if(EFI_ERROR(st))return st;
+    UINTN efi_size=0;VOID *efi_image=NULL;
+    st=steveos_fs_read_file(src,L"\\EFI\\BOOT\\BOOTX64.EFI",&efi_image,&efi_size);
+    uefi_call_wrapper(src->Close,1,src);
+    if(EFI_ERROR(st)||!efi_image)return st;
+    st=steveos_fs_open_volume(tmp[target_index].handle,&root);
+    if(!EFI_ERROR(st))st=uefi_call_wrapper(root->Open,5,root,&ed,L"EFI",EFI_FILE_MODE_READ|EFI_FILE_MODE_WRITE|EFI_FILE_MODE_CREATE,EFI_FILE_DIRECTORY);
+    if(!EFI_ERROR(st))st=uefi_call_wrapper(ed->Open,5,ed,&bd,L"BOOT",EFI_FILE_MODE_READ|EFI_FILE_MODE_WRITE|EFI_FILE_MODE_CREATE,EFI_FILE_DIRECTORY);
+    if(!EFI_ERROR(st))st=uefi_call_wrapper(bd->Open,5,bd,&f,L"BOOTX64.EFI",EFI_FILE_MODE_READ|EFI_FILE_MODE_WRITE|EFI_FILE_MODE_CREATE,0);
+    if(!EFI_ERROR(st)&&f){
+        UINT64 new_size=0;
+        EFI_FILE_INFO *info=NULL;
+        UINTN info_sz=0;
+        if(uefi_call_wrapper(f->GetInfo,4,f,&gEfiFileInfoGuid,&info_sz,NULL)==EFI_BUFFER_TOO_SMALL){
+            info=AllocatePool(info_sz);
+            if(info&& !EFI_ERROR(uefi_call_wrapper(f->GetInfo,4,f,&gEfiFileInfoGuid,&info_sz,info))){
+                info->FileSize=0;info->PhysicalSize=0;
+                uefi_call_wrapper(f->SetInfo,4,f,&gEfiFileInfoGuid,info_sz,info);
+            }
+            if(info)FreePool(info);
+        }
+        st=uefi_call_wrapper(f->SetPosition,2,f,0);
+        if(!EFI_ERROR(st)){UINTN wr=efi_size;st=uefi_call_wrapper(f->Write,3,f,&wr,efi_image);if(!EFI_ERROR(st)&&wr!=efi_size)st=EFI_DEVICE_ERROR;}
+        (void)new_size;
+        uefi_call_wrapper(f->Close,1,f);
+    }
+    if(bd)uefi_call_wrapper(bd->Close,1,bd);
+    if(ed)uefi_call_wrapper(ed->Close,1,ed);
+    if(root)uefi_call_wrapper(root->Close,1,root);
+    FreePool(efi_image);
+    return st;
+}
+
+static const CHAR16*steveos_basename(const CHAR16*path){
+    const CHAR16*last=path;
+    if(!path)return last;
+    for(const CHAR16*p=path;*p;p++)if(*p==L'\\'||*p==L'/')last=p+1;
+    return last;
+}
+
+EFI_STATUS steveos_install_app(const CHAR16 *source_path){
+    if(!source_path||!steveos_boot_device)return EFI_INVALID_PARAMETER;
+    const CHAR16*name=steveos_basename(source_path);
+    if(!name||!name[0])return EFI_INVALID_PARAMETER;
+    EFI_FILE_PROTOCOL *root=NULL,*apps=NULL,*src=NULL,*dst=NULL;EFI_STATUS st;
+    st=steveos_fs_open_volume(steveos_boot_device,&root);if(EFI_ERROR(st))return st;
+    st=uefi_call_wrapper(root->Open,5,root,&src,source_path,EFI_FILE_MODE_READ,0);
+    if(EFI_ERROR(st)){uefi_call_wrapper(root->Close,1,root);return st;}
+    EFI_FILE_INFO *info=NULL;UINTN info_sz=0;
+    st=uefi_call_wrapper(src->GetInfo,4,src,&gEfiFileInfoGuid,&info_sz,NULL);
+    if(st==EFI_BUFFER_TOO_SMALL){info=AllocatePool(info_sz);if(info)st=uefi_call_wrapper(src->GetInfo,4,src,&gEfiFileInfoGuid,&info_sz,info);}
+    if(EFI_ERROR(st)||!info||info->FileSize>1024ULL*1024ULL){if(info)FreePool(info);uefi_call_wrapper(src->Close,1,src);uefi_call_wrapper(root->Close,1,root);return EFI_BAD_BUFFER_SIZE;}
+    UINTN size=(UINTN)info->FileSize;FreePool(info);
+    VOID*buf=AllocatePool(size?size:1);if(!buf){uefi_call_wrapper(src->Close,1,src);uefi_call_wrapper(root->Close,1,root);return EFI_OUT_OF_RESOURCES;}
+    UINTN read=size;st=uefi_call_wrapper(src->Read,3,src,&read,buf);uefi_call_wrapper(src->Close,1,src);
+    if(EFI_ERROR(st)||read!=size){FreePool(buf);uefi_call_wrapper(root->Close,1,root);return EFI_DEVICE_ERROR;}
+    st=uefi_call_wrapper(root->Open,5,root,&apps,L"\\SteveOS\\Apps",EFI_FILE_MODE_READ|EFI_FILE_MODE_WRITE|EFI_FILE_MODE_CREATE,EFI_FILE_DIRECTORY);
+    if(!EFI_ERROR(st))st=uefi_call_wrapper(apps->Open,5,apps,&dst,(CHAR16*)name,EFI_FILE_MODE_READ|EFI_FILE_MODE_WRITE|EFI_FILE_MODE_CREATE,0);
+    if(!EFI_ERROR(st)){UINTN wr=size;uefi_call_wrapper(dst->SetPosition,2,dst,0);st=uefi_call_wrapper(dst->Write,3,dst,&wr,buf);if(!EFI_ERROR(st)&&wr!=size)st=EFI_DEVICE_ERROR;}
+    if(dst)uefi_call_wrapper(dst->Close,1,dst);if(apps)uefi_call_wrapper(apps->Close,1,apps);uefi_call_wrapper(root->Close,1,root);FreePool(buf);
+    return st;
+}
+
+EFI_STATUS steveos_network_info(STEVEOS_NETWORK_INFO *out){
+    if(!out)return EFI_INVALID_PARAMETER;
+    ZeroMem(out,sizeof(*out));
+    EFI_SIMPLE_NETWORK_PROTOCOL *snp=NULL;
+    EFI_STATUS st=uefi_call_wrapper(BS->LocateProtocol,3,&gEfiSimpleNetworkProtocolGuid,NULL,(VOID**)&snp);
+    if(EFI_ERROR(st)||!snp||!snp->Mode)return st;
+    out->state=(UINT32)snp->Mode->State;
+    out->media_present=snp->Mode->MediaPresent?1u:0u;
+    out->mac_size=(UINT32)snp->Mode->HwAddressSize;
+    if(out->mac_size>32)out->mac_size=32;
+    for(UINT32 i=0;i<out->mac_size;i++)out->mac[i]=snp->Mode->CurrentAddress.Addr[i];
+    return EFI_SUCCESS;
+}
+
 EFI_STATUS steveos_write_boot_text(const CHAR16 *path,const void *data,UINTN size){
     if(!path||!data)return EFI_INVALID_PARAMETER;
     if(!steveos_boot_device)return EFI_NOT_FOUND;
@@ -295,6 +432,10 @@ EFI_STATUS steveos_kernel_boot(EFI_HANDLE image_handle,
     boot->uefi_get_time = (UINT64)(UINTN)RT->GetTime;
     boot->uefi_http_get = (UINT64)(UINTN)steveos_http_get;
     boot->uefi_write_text = (UINT64)(UINTN)steveos_write_boot_text;
+    boot->uefi_list_install_targets = (UINT64)(UINTN)steveos_list_install_targets;
+    boot->uefi_install_self = (UINT64)(UINTN)steveos_install_self;
+    boot->uefi_install_app = (UINT64)(UINTN)steveos_install_app;
+    boot->uefi_network_info = (UINT64)(UINTN)steveos_network_info;
     boot->backbuffer_base = backbuffer_addr;
     boot->backbuffer_size = fb_bytes64;
     (void)snapshot_boot_files(image_handle, boot);
