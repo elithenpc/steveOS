@@ -13,6 +13,7 @@ static EFI_HANDLE steveos_image_handle;
 static EFI_STATUS steveos_install_self(UINT64 target_index);
 static EFI_STATUS steveos_install_server(UINT64 target_index);
 static EFI_STATUS steveos_launch_app(const CHAR16 *path);
+EFI_STATUS steveos_write_boot_text(const CHAR16 *path,const void *data,UINTN size);
 static EFI_STATUS steveos_install_windows_app(const CHAR16 *source_path);
 static EFI_STATUS steveos_run_windows_app(const CHAR16 *source_path);
 
