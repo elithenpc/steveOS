@@ -8,6 +8,7 @@
 extern const unsigned char _binary_build_native_kernel_raw_start[];
 extern const unsigned char _binary_build_native_kernel_raw_end[];
 static EFI_HANDLE steveos_boot_device;
+static EFI_HANDLE steveos_image_handle;
 typedef void (*STEVEOS_NATIVE_ENTRY)(STEVEOS_BOOT_INFO *boot, void *stack_top);
 #define STEVEOS_KERNEL_LOAD_ADDRESS 0x00200000ULL
 #define STEVEOS_IMAGE_LOAD_LIMIT (2ULL * 1024ULL * 1024ULL)
@@ -213,6 +214,7 @@ static EFI_STATUS snapshot_boot_files(EFI_HANDLE image_handle, STEVEOS_BOOT_INFO
     boot->boot_file_count=count;
     boot->boot_device_handle=(UINT64)(UINTN)loaded->DeviceHandle;
     steveos_boot_device=loaded->DeviceHandle;
+    steveos_image_handle=image_handle;
     FreePool(buf);
     uefi_call_wrapper(root->Close,1,root);
     return EFI_SUCCESS;
@@ -341,6 +343,18 @@ EFI_STATUS steveos_install_app(const CHAR16 *source_path){
     return st;
 }
 
+EFI_STATUS steveos_launch_app(const CHAR16 *path){
+    if(!path||!steveos_boot_device||!steveos_image_handle)return EFI_INVALID_PARAMETER;
+    EFI_DEVICE_PATH *dp=FileDevicePath(steveos_boot_device,(CHAR16*)path);
+    if(!dp)return EFI_OUT_OF_RESOURCES;
+    EFI_HANDLE child=NULL;
+    EFI_STATUS st=uefi_call_wrapper(BS->LoadImage,6,FALSE,steveos_image_handle,dp,NULL,0,&child);
+    FreePool(dp);
+    if(EFI_ERROR(st)||!child)return st;
+    st=uefi_call_wrapper(BS->StartImage,3,child,NULL,NULL);
+    return st;
+}
+
 EFI_STATUS steveos_network_info(STEVEOS_NETWORK_INFO *out){
     if(!out)return EFI_INVALID_PARAMETER;
     ZeroMem(out,sizeof(*out));
@@ -435,6 +449,7 @@ EFI_STATUS steveos_kernel_boot(EFI_HANDLE image_handle,
     boot->uefi_list_install_targets = (UINT64)(UINTN)steveos_list_install_targets;
     boot->uefi_install_self = (UINT64)(UINTN)steveos_install_self;
     boot->uefi_install_app = (UINT64)(UINTN)steveos_install_app;
+    boot->uefi_launch_app = (UINT64)(UINTN)steveos_launch_app;
     boot->uefi_network_info = (UINT64)(UINTN)steveos_network_info;
     boot->backbuffer_base = backbuffer_addr;
     boot->backbuffer_size = fb_bytes64;
