@@ -23,7 +23,7 @@ cp /etc/resolv.conf $ROOT/etc/resolv.conf || true
 
 chroot $ROOT /sbin/apk add --no-cache \
   ca-certificates curl git openssh-server \
-  iproute2 kmod \
+  iproute2 iptables kmod \
   nodejs npm python3 py3-pip \
   tailscale linux-virt linux-firmware-intel
 
