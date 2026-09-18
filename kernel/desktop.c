@@ -18,7 +18,7 @@ enum {
     APP_DESKTOP, APP_BROWSER, APP_CALC, APP_EDITOR, APP_FILES, APP_IMAGE,
     APP_SETTINGS, APP_TASKS, APP_TERMINAL, APP_CALENDAR, APP_CONTROL,
     APP_ABOUT, APP_SYSINFO, APP_DEVICES, APP_INSTALLER, APP_STORE,
-    APP_SERVER, APP_ADVANCED, APP_WINDOWS
+    APP_SERVER, APP_ADVANCED
 };
 
 typedef struct { uint32_t a,b,c,d; } GUID;
@@ -469,7 +469,6 @@ static void mac_text(char*out,size_t cap){
     }
     out[p]=0;
 }
-static void run_windows_file_index(int idx);
 static void open_server_config(void);
 static int server_runtime_detected(void);
 
@@ -571,11 +570,11 @@ static int contains_ci(const char*a,const char*b){
     }
     return 0;
 }
-static const char*menu_names[]={"Web Browser","Calculator","Text Editor","File Manager","Image Viewer","Settings","Task Manager","Terminal","Calendar","Control Center","About SteveOS","System Information","Device Manager","Installer","App Store","Server Manager","Advanced Settings","Windows Apps"};
-static const int menu_apps[]={APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_IMAGE,APP_SETTINGS,APP_TASKS,APP_TERMINAL,APP_CALENDAR,APP_CONTROL,APP_ABOUT,APP_SYSINFO,APP_DEVICES,APP_INSTALLER,APP_STORE,APP_SERVER,APP_ADVANCED,APP_WINDOWS};
+static const char*menu_names[]={"Web Browser","Calculator","Text Editor","File Manager","Image Viewer","Settings","Task Manager","Terminal","Calendar","Control Center","About SteveOS","System Information","Device Manager","Installer","App Store","Server Manager","Advanced Settings"};
+static const int menu_apps[]={APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_IMAGE,APP_SETTINGS,APP_TASKS,APP_TERMINAL,APP_CALENDAR,APP_CONTROL,APP_ABOUT,APP_SYSINFO,APP_DEVICES,APP_INSTALLER,APP_STORE,APP_SERVER,APP_ADVANCED};
 static int menu_filtered_app(int visible){
     int n=0;
-    for(int i=0;i<18;i++)if(contains_ci(menu_names[i],menu_search)){if(n==visible)return menu_apps[i];n++;}
+    for(int i=0;i<17;i++)if(contains_ci(menu_names[i],menu_search)){if(n==visible)return menu_apps[i];n++;}
     return APP_DESKTOP;
 }
 static void draw_start_menu(void){
@@ -586,10 +585,10 @@ static void draw_start_menu(void){
     fill_rect(x+18,y+60,mw-36,30,panel2_color());
     text(x+30,y+70,menu_search[0]?menu_search:"SEARCH APPLICATIONS",menu_search[0]?text_color():sub_color(),1);
     int shown=0;
-    for(int i=0;i<18;i++)if(contains_ci(menu_names[i],menu_search)){
+    for(int i=0;i<17;i++)if(contains_ci(menu_names[i],menu_search)){
         int row=shown%9,col=shown/9,bx=x+18+col*196,by=y+98+row*55;
         fill_rect(bx,by,180,45,(current_app==menu_apps[i])?panel2_color():bg_color());
-        static const int icon_map[]={0,1,2,3,7,6,5,4,7,7,7,6,15,14,15,15,6,15};draw_icon(bx+5,by-4,icon_map[i]);
+        static const int icon_map[]={0,1,2,3,7,6,5,4,7,7,7,6,15,14,15,15,6};draw_icon(bx+5,by-4,icon_map[i]);
         text(bx+66,by+12,menu_names[i],text_color(),1);
         shown++;
     }
@@ -644,58 +643,6 @@ static void draw_store(void){
     text(42,(int)height-96,app_install_done==1?"PACKAGE INSTALLED":app_install_done==2?"PACKAGE ACTION FAILED":"SELECT A PACKAGE",app_install_done==2?danger_color():app_install_done==1?good_color():sub_color(),1);
     taskbar();
 }
-
-static int windows_app_index_at(int row){
-    int shown=0;
-    if(!boot_files||!boot_info)return -1;
-    for(uint64_t i=0;i<boot_info->boot_file_count;i++){
-        if(boot_files[i].kind!=4)continue;
-        if(shown==row)return (int)i;
-        shown++;
-    }
-    return -1;
-}
-static int windows_app_count(void){
-    int n=0;
-    if(!boot_files||!boot_info)return 0;
-    for(uint64_t i=0;i<boot_info->boot_file_count;i++)if(boot_files[i].kind==4)n++;
-    return n;
-}
-static void run_windows_file_index(int idx){
-    if(idx<0||!boot_files||!boot_info||idx>=(int)boot_info->boot_file_count)return;
-    if(boot_files[idx].kind!=4){terminal_add("NOT A WINDOWS EXE");return;}
-    if(!boot_info->uefi_run_windows_app){terminal_add("EXE RUNTIME UNAVAILABLE");return;}
-    RUNWINDOWSAPP fn=(RUNWINDOWSAPP)(uintptr_t)boot_info->uefi_run_windows_app;
-    uint64_t st=fn(boot_files[idx].name);
-    terminal_add(st==0?"STARTING WINDOWS APP":"WINDOWS APP FAILED");
-}
-static void draw_windows_apps(void){
-    window_bar("WINDOWS APPS","WINE COMPATIBILITY LAYER");
-    text(42,116,"WINDOWS EXECUTABLES",accent_color(),1);
-    text(42,138,".EXE FILES ARE RUN THROUGH WINE IN STEVEOS SERVER MODE.",sub_color(),1);
-    text(42,156,"LAUNCHING ONE WILL REBOOT INTO THE SERVER RUNTIME.",sub_color(),1);
-    int count=windows_app_count();
-    if(!count){
-        fill_rect(42,196,(int)width-84,74,panel2_color());
-        text(62,218,"NO .EXE FILES FOUND",text_color(),2);
-        text(62,248,"PUT WINDOWS PROGRAMS IN \\SteveOS\\Apps OR THE BOOT VOLUME.",sub_color(),1);
-    }else{
-        int shown=count>10?10:count;
-        for(int row=0;row<shown;row++){
-            int idx=windows_app_index_at(row),y=196+row*40;
-            char name[96];file_name(&boot_files[idx],name,sizeof(name));
-            fill_rect(42,y,(int)width-84,32,panel_color());
-            text(58,y+10,name,text_color(),1);
-            text((int)width-188,y+10,"RUN WITH WINE",accent_color(),1);
-        }
-        if(count>10)text(42,606,"MORE EXES AVAILABLE IN FILE MANAGER / TERMINAL.",sub_color(),1);
-    }
-    fill_rect(42,(int)height-136,208,38,panel2_color());
-    text(60,(int)height-125,"HEADLESS GUI: Xvfb",sub_color(),1);
-    text(42,(int)height-92,"CONSOLE EXES CAN RUN DIRECTLY; GUI EXES RUN INSIDE THE SERVER DISPLAY.",sub_color(),1);
-    taskbar();
-}
-
 static void draw_server(void){
     window_bar("SERVER MANAGER","DISCORD + TAILSCALE");
     text(42,116,"SERVER RUNTIME",accent_color(),1);
@@ -1253,7 +1200,7 @@ static void terminal_open_file(const char*path){
                     RUNWINDOWSAPP fn=(RUNWINDOWSAPP)(uintptr_t)boot_info->uefi_run_windows_app;
                     fn(f->name);
                 }
-            }else if(f->kind==2&&f->data){if(boot_name_is_html(f))browser_load_local_file(f);else load_text_file(f);}
+            }else if(f->kind==4){if(boot_info->uefi_run_windows_app){RUNWINDOWSAPP fn=(RUNWINDOWSAPP)(uintptr_t)boot_info->uefi_run_windows_app;fn(f->name);}}else if(f->kind==2&&f->data){if(boot_name_is_html(f))browser_load_local_file(f);else load_text_file(f);}
             else current_app=APP_FILES;
             mark_dirty();
             return;
@@ -1565,7 +1512,7 @@ static void app_click(uint32_t x,uint32_t y){
     if(current_app==APP_CALC){int bw=100,bh=46,g=10,cols=5,x0=38,y0=204;const char*keys[]={"7","8","9","/","4","5","6","*","1","2","3","-","0","(",")","+","C","=","."};for(int i=0;i<19;i++){int bx=x0+(i%cols)*(bw+g),by=y0+(i/cols)*(bh+g);if(hit(x,y,bx,by,bw,bh)){char c=keys[i][0];if(c=='C'){calc_len=0;calc_input[0]=0;calc_has_result=0;}else if(c=='=')calc_eval();else if(calc_len<CALC_MAX){calc_input[calc_len++]=c;calc_input[calc_len]=0;calc_has_result=0;}mark_dirty();return;}}}
     else if(current_app==APP_FILES){
         for(int p=0;p<6;p++)if(hit(x,y,50,150+p*42,190,34)){file_filter=p;file_scroll=0;selected_file=-1;mark_dirty();return;}
-        for(int row=0;row<10;row++){uint64_t i=0;if(!visible_file_at(file_scroll+row,&i))break;if(hit(x,y,278,150+row*40,(int)width-316,32)){selected_file=(int)i;STEVEOS_BOOT_FILE*f=&boot_files[i];if(f->kind==1)current_app=APP_IMAGE;else if(f->kind==4){run_windows_file_index((int)i);}else if(f->kind==2&&f->data){if(boot_name_is_html(f))browser_load_local_file(f);else load_text_file(f);}mark_dirty();return;}}
+        for(int row=0;row<10;row++){uint64_t i=0;if(!visible_file_at(file_scroll+row,&i))break;if(hit(x,y,278,150+row*40,(int)width-316,32)){selected_file=(int)i;STEVEOS_BOOT_FILE*f=&boot_files[i];if(f->kind==1)current_app=APP_IMAGE;else if(f->kind==4){if(boot_info->uefi_run_windows_app) {RUNWINDOWSAPP fn=(RUNWINDOWSAPP)(uintptr_t)boot_info->uefi_run_windows_app;fn(f->name);}}else if(f->kind==2&&f->data){if(boot_name_is_html(f))browser_load_local_file(f);else load_text_file(f);}mark_dirty();return;}}
     }
     else if(current_app==APP_SETTINGS){if(hit(x,y,42,136,(int)width-84,54))light_theme^=1;else if(hit(x,y,42,202,(int)width-84,54)){pointer_scale=pointer_scale>=4?1:pointer_scale+1;native_pointer_set_scale(pointer_scale);}else if(hit(x,y,42,308,(int)width-84,54)){accent_id=(uint8_t)((accent_id+1)&3u);}mark_dirty();}
     else if(current_app==APP_CONTROL){
@@ -1583,10 +1530,6 @@ static void app_click(uint32_t x,uint32_t y){
         for(int i=0;i<app_package_count&&i<7;i++)if(hit(x,y,42,214+i*48,(int)width-84,38)){app_package_pick=i;app_install_done=0;mark_dirty();return;}
         if(hit(x,y,42,(int)height-136,150,38)&&app_package_pick>=0){app_install_selected();mark_dirty();return;}
         if(hit(x,y,208,(int)height-136,150,38)&&app_package_pick>=0){app_install_selected();if(app_install_done==1)app_launch_selected();mark_dirty();return;}
-    }
-    else if(current_app==APP_WINDOWS){
-        int shown=windows_app_count()>10?10:windows_app_count();
-        for(int row=0;row<shown;row++)if(hit(x,y,42,196+row*40,(int)width-84,32)){run_windows_file_index(windows_app_index_at(row));return;}
     }
     else if(current_app==APP_SERVER){
         if(hit(x,y,42,278,170,38)){
@@ -1628,15 +1571,15 @@ static void app_click(uint32_t x,uint32_t y){
         else if(hit(x,y,(int)width-214,106,50,40)){browser_focus=0;if(browser_url[0])browser_fetch();mark_dirty();}
         else{for(int i=0;i<browser_link_count;i++)if(hit(x,y,(int)width-270,228+i*42,220,32)){size_t n=0;while(browser_link_urls[i][n]&&n+1<BROWSER_URL_MAX)browser_url[n]=browser_link_urls[i][n],n++;browser_url[n]=0;browser_focus=0;browser_fetch();mark_dirty();return;}}
     }
-    else if(current_app==APP_DESKTOP){if(hit(x,y,0,(int)height-54,76,54)){menu_open^=1;if(menu_open){menu_search_len=0;menu_search[0]=0;}mark_dirty();return;}int h=54;for(int i=0;i<6;i++)if(hit(x,y,84+i*72,(int)height-h,64,38)){launch_app((int[]){APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_TERMINAL,APP_SETTINGS}[i]);return;}int cw=250,ch=80,g=14,x0=28,y0=132,cols=width>=1200?4:3;for(int i=0;i<18;i++){int col=i%cols,row=i/cols,bx=x0+col*(cw+g),by=y0+row*(ch+g);if(hit(x,y,bx,by,cw,ch)){launch_app((int[]){APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_IMAGE,APP_SETTINGS,APP_TASKS,APP_TERMINAL,APP_CALENDAR,APP_CONTROL,APP_ABOUT,APP_SYSINFO,APP_DEVICES,APP_INSTALLER,APP_STORE,APP_SERVER,APP_ADVANCED,APP_WINDOWS}[i]);return;}}}
-    else if(current_app==APP_ABOUT||current_app==APP_CONTROL||current_app==APP_TASKS||current_app==APP_EDITOR||current_app==APP_TERMINAL||current_app==APP_IMAGE||current_app==APP_CALENDAR||current_app==APP_SYSINFO||current_app==APP_DEVICES||current_app==APP_INSTALLER||current_app==APP_STORE||current_app==APP_SERVER||current_app==APP_ADVANCED||current_app==APP_WINDOWS){if(hit(x,y,(int)width-62,66,30,24)){current_app=APP_DESKTOP;mark_dirty();return;}if(y>(uint32_t)height-54&&x<76){current_app=APP_DESKTOP;menu_open=1;mark_dirty();return;}}
+    else if(current_app==APP_DESKTOP){if(hit(x,y,0,(int)height-54,76,54)){menu_open^=1;if(menu_open){menu_search_len=0;menu_search[0]=0;}mark_dirty();return;}int h=54;for(int i=0;i<6;i++)if(hit(x,y,84+i*72,(int)height-h,64,38)){launch_app((int[]){APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_TERMINAL,APP_SETTINGS}[i]);return;}int cw=250,ch=80,g=14,x0=28,y0=132,cols=width>=1200?4:3;for(int i=0;i<12;i++){int col=i%cols,row=i/cols,bx=x0+col*(cw+g),by=y0+row*(ch+g);if(hit(x,y,bx,by,cw,ch)){launch_app((int[]){APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_IMAGE,APP_SETTINGS,APP_TASKS,APP_TERMINAL,APP_CALENDAR,APP_CONTROL,APP_ABOUT,APP_SYSINFO,APP_DEVICES,APP_INSTALLER,APP_STORE,APP_SERVER,APP_ADVANCED}[i]);return;}}}
+    else if(current_app==APP_ABOUT||current_app==APP_CONTROL||current_app==APP_TASKS||current_app==APP_EDITOR||current_app==APP_TERMINAL||current_app==APP_IMAGE||current_app==APP_CALENDAR||current_app==APP_SYSINFO||current_app==APP_DEVICES||current_app==APP_INSTALLER||current_app==APP_STORE||current_app==APP_SERVER||current_app==APP_ADVANCED){if(hit(x,y,(int)width-62,66,30,24)){current_app=APP_DESKTOP;mark_dirty();return;}if(y>(uint32_t)height-54&&x<76){current_app=APP_DESKTOP;menu_open=1;mark_dirty();return;}}
 }
 static void menu_click(uint32_t x,uint32_t y){
     int mw=430,mh=(int)height-76,mx=12,my=(int)height-62-mh;
     if(!hit(x,y,mx,my,mw,mh)){menu_open=0;menu_search_len=0;menu_search[0]=0;mark_dirty();return;}
     if(hit(x,y,mx+18,my+60,mw-36,30)){return;}
     int shown=0;
-    for(int i=0;i<18;i++)if(contains_ci(menu_names[i],menu_search)){
+    for(int i=0;i<17;i++)if(contains_ci(menu_names[i],menu_search)){
         int row=shown%9,col=shown/9,bx=mx+18+col*196,by=my+98+row*55;
         if(hit(x,y,bx,by,180,45)){launch_app(menu_apps[i]);return;}
         shown++;
@@ -1745,13 +1688,6 @@ static void handle_scan(uint8_t s){
         }
         mark_dirty();return;
     }
-    if(current_app==APP_WINDOWS){
-        int count=windows_app_count();
-        if(s==0x48&&windows_app_index_at(0)>=0){mark_dirty();return;}
-        if(s>=0x02&&s<=0x0B){int row=(int)s-0x02;if(row<count&&row<10){run_windows_file_index(windows_app_index_at(row));return;}}
-        if(s==0x1C&&count>0){run_windows_file_index(windows_app_index_at(0));return;}
-        mark_dirty();return;
-    }
     if(current_app==APP_SERVER){
         if(s==0x1C&&server_install_state==2&&boot_info->uefi_launch_server){LAUNCHSERVER fn=(LAUNCHSERVER)(uintptr_t)boot_info->uefi_launch_server;fn();return;}
         if(s==0x18){open_server_config();return;}
@@ -1772,7 +1708,7 @@ static void handle_scan(uint8_t s){
 }
 
 static void render(void){
-    switch(current_app){case APP_DESKTOP:draw_desktop();break;case APP_BROWSER:draw_browser();break;case APP_CALC:draw_calc();break;case APP_EDITOR:draw_editor();break;case APP_FILES:draw_files();break;case APP_IMAGE:draw_image();break;case APP_SETTINGS:draw_settings();break;case APP_TASKS:draw_tasks();break;case APP_TERMINAL:draw_terminal();break;case APP_CALENDAR:draw_calendar();break;case APP_CONTROL:draw_control();break;case APP_SYSINFO:draw_sysinfo();break;case APP_DEVICES:scan_pci_devices();draw_devices();break;case APP_INSTALLER:draw_installer();break;case APP_STORE:draw_store();break;case APP_SERVER:draw_server();break;case APP_ADVANCED:draw_advanced();break;case APP_WINDOWS:draw_windows_apps();break;default:draw_about();break;}
+    switch(current_app){case APP_DESKTOP:draw_desktop();break;case APP_BROWSER:draw_browser();break;case APP_CALC:draw_calc();break;case APP_EDITOR:draw_editor();break;case APP_FILES:draw_files();break;case APP_IMAGE:draw_image();break;case APP_SETTINGS:draw_settings();break;case APP_TASKS:draw_tasks();break;case APP_TERMINAL:draw_terminal();break;case APP_CALENDAR:draw_calendar();break;case APP_CONTROL:draw_control();break;case APP_SYSINFO:draw_sysinfo();break;case APP_DEVICES:scan_pci_devices();draw_devices();break;case APP_INSTALLER:draw_installer();break;case APP_STORE:draw_store();break;case APP_SERVER:draw_server();break;case APP_ADVANCED:draw_advanced();break;default:draw_about();break;}
     draw_power_menu();
     present();dirty=0;
 }
