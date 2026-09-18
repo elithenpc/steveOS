@@ -71,7 +71,7 @@ static uint8_t app_install_done,app_download_focus;
 static char app_download_url[BROWSER_URL_MAX+1];
 static STEVEOS_NETWORK_INFO network_info;
 static uint8_t network_info_valid;
-static uint8_t service_flags,logging_level,boot_delay;
+static uint8_t service_flags,logging_level,boot_delay,net_test_state;
 typedef struct {uint8_t bus,dev,fn,class_code,subclass;uint16_t vendor,device;} PCI_VIEW;
 static PCI_VIEW pci_devices[24];
 static int selected_file=-1,file_scroll,file_filter;
@@ -300,6 +300,15 @@ static void save_note(void){
 }
 static void file_name(const STEVEOS_BOOT_FILE*f,char*out,size_t cap){size_t i=0;if(!cap)return;while(f&&i+1<cap&&i<STEVEOS_BOOT_FILE_NAME_MAX&&f->name[i]){uint16_t c=f->name[i++];out[i-1]=c<128?(char)c:'?';}out[i]=0;}
 static void load_text_file(STEVEOS_BOOT_FILE*f){if(!f||!f->data||!f->size)return;size_t n=(size_t)f->size;if(n>NOTE_MAX)n=NOTE_MAX;const uint8_t*d=(const uint8_t*)(uintptr_t)f->data;for(size_t i=0;i<n;i++)note[i]=(d[i]>=32||d[i]=='\n'||d[i]=='\t')?d[i]:' ';note[n]=0;note_len=n;note_cursor=n;note_dirty=0;current_app=APP_EDITOR;mark_dirty();}
+static void internet_test(void){
+    net_test_state=0;
+    if(!boot_info->uefi_http_get)return;
+    HTTPGET get=(HTTPGET)(uintptr_t)boot_info->uefi_http_get;
+    const char*p="http://example.com/";
+    uint16_t url[32];size_t n=0;while(p[n]&&n+1<sizeof(url)/sizeof(url[0])){url[n]=(uint16_t)(unsigned char)p[n];n++;}url[n]=0;
+    char body[128];uint64_t len=0;uint32_t status=0;uint64_t st=get(url,body,sizeof(body)-1,&len,&status);
+    if(st==0&&status>=200&&status<500)net_test_state=1;else net_test_state=2;
+}
 static void refresh_network_info(void){
     network_info_valid=0;
     if(!boot_info->uefi_network_info)return;
@@ -591,7 +600,7 @@ static void draw_advanced(void){
     fill_rect(42,310,(int)width-84,48,panel_color());text(58,325,"VERBOSE LOGGING",text_color(),1);text((int)width-180,325,logging_level?"ON":"OFF",accent_color(),1);
     fill_rect(42,368,(int)width-84,48,panel_color());text(58,383,"BOOT DELAY",text_color(),1);u64_text((int)width-180,383,boot_delay,text_color(),1);text((int)width-150,383,"SECONDS",sub_color(),1);
     text(42,450,"NETWORK RUNTIME",accent_color(),1);
-    fill_rect(42,470,(int)width-84,100,panel2_color());text(58,486,network_info_valid?(network_info.media_present?"LINK PRESENT":"NO CARRIER"):"NO NETWORK ADAPTER",text_color(),1);text(58,510,"UEFI HTTP CLIENT CAN ACCESS INTERNET WHEN FIRMWARE NETWORKING IS CONFIGURED.",sub_color(),1);text(58,534,"NATIVE TCP/IP + TLS ARE STILL FUTURE RUNTIME COMPONENTS.",sub_color(),1);
+    fill_rect(42,470,(int)width-84,118,panel2_color());text(58,486,network_info_valid?(network_info.media_present?"LINK PRESENT":"NO CARRIER"):"NO NETWORK ADAPTER",text_color(),1);text(58,508,network_info_valid?(network_info.mac_size>=6?"MAC ADDRESS AVAILABLE":"MAC ADDRESS UNKNOWN"):"UEFI SNP UNAVAILABLE",sub_color(),1);text(58,530,net_test_state==1?"INTERNET TEST: PASSED":net_test_state==2?"INTERNET TEST: FAILED":"INTERNET TEST: NOT RUN",net_test_state==1?good_color():net_test_state==2?danger_color():sub_color(),1);text(58,552,"UEFI HTTP CLIENT CAN ACCESS INTERNET WHEN FIRMWARE NETWORKING IS CONFIGURED.",sub_color(),1);text(58,574,"NATIVE TCP/IP + TLS ARE STILL FUTURE RUNTIME COMPONENTS.",sub_color(),1);fill_rect((int)width-220,594,160,34,accent_color());text((int)width-204,603,"TEST INTERNET",0xFFFFFFu,1);
     text(42,(int)height-98,"ARROWS CHANGE OPTIONS  •  F5 SAVE  •  VALUES ARE PERSISTED IN UEFI NVRAM",sub_color(),1);taskbar();
 }
 static void draw_desktop(void){
@@ -1370,7 +1379,7 @@ static void app_click(uint32_t x,uint32_t y){
         if(hit(x,y,42,194,(int)width-84,48)){service_flags^=2;save_settings();return;}
         if(hit(x,y,42,252,(int)width-84,48)){service_flags^=4;save_settings();return;}
         if(hit(x,y,42,310,(int)width-84,48)){logging_level^=1;save_settings();return;}
-        if(hit(x,y,42,368,(int)width-84,48)){boot_delay=boot_delay>=10?0:boot_delay+1;save_settings();return;}
+        if(hit(x,y,42,368,(int)width-84,48)){boot_delay=boot_delay>=10?0:boot_delay+1;save_settings();return;}if(current_app==APP_ADVANCED&&hit(x,y,(int)width-220,594,160,34)){internet_test();mark_dirty();return;}
     }
     else if(current_app==APP_BROWSER){
         for(int i=0;i<browser_tab_count;i++)if(hit(x,y,38+i*120,152,110,28)){browser_tab_switch(i);return;}
