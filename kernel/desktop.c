@@ -411,6 +411,9 @@ static void mac_text(char*out,size_t cap){
     }
     out[p]=0;
 }
+static void open_server_config(void);
+static int server_runtime_detected(void);
+
 static void panel(void){
     fill_rect(0,0,(int)width,(int)height,bg_color());
     fill_rect(0,0,(int)width,42,light_theme?0xDCE3E7u:0x151D26u);
@@ -590,10 +593,11 @@ static void draw_server(void){
     text(58,184,"NODE.JS + PYTHON + TAILSCALE + SSH + LINUX NETWORKING",sub_color(),1);
     text(58,206,"CONFIG: \\SteveOS\\Server\\server.conf",accent_color(),1);
     text(58,228,"BOT SOURCE: \\SteveOS\\Server\\bot",sub_color(),1);
-    fill_rect(42,278,170,38,server_install_state==1?accent_dark():panel2_color());
-    text(60,289,server_install_state==1?"SERVER INSTALLED":"INSTALL SERVER",text_color(),1);
-    fill_rect(228,278,170,38,server_install_state==1?accent_color():panel2_color());
+    fill_rect(42,278,170,38,server_install_state==2?panel2_color():accent_dark());
+    text(60,289,server_install_state==2?"SERVER INSTALLED":"INSTALL SERVER",text_color(),1);
+    fill_rect(228,278,170,38,server_install_state==2?accent_color():panel2_color());
     text(248,289,"BOOT SERVER MODE",text_color(),1);
+    fill_rect(414,278,170,38,panel2_color());text(434,289,"EDIT CONFIG",text_color(),1);
     if(server_install_state==2)text(42,330,"SERVER RUNTIME INSTALLED",good_color(),1);
     else if(server_install_state==3)text(42,330,"SERVER INSTALL FAILED",danger_color(),1);
     else text(42,330,"INSTALL IS NON-DESTRUCTIVE AND TARGET-SPECIFIC.",sub_color(),1);
@@ -1099,6 +1103,22 @@ static void draw_browser(void){
     text(40,(int)height-98,"HTTP BROWSER  •  CTRL+L ADDRESS  •  CTRL+D SAVE BOOKMARK  •  CTRL+B OPEN BOOKMARK",sub_color(),1);taskbar();
 }
 
+static int server_runtime_detected(void){
+    if(!boot_files||!boot_info)return 0;
+    for(uint64_t i=0;i<boot_info->boot_file_count;i++){
+        char n[96];file_name(&boot_files[i],n,sizeof(n));
+        if(terminal_file_match(n,"SteveOS/Server/ServerBoot.efi"))return 1;
+    }
+    return 0;
+}
+static void open_server_config(void){
+    if(!boot_files||!boot_info)return;
+    for(uint64_t i=0;i<boot_info->boot_file_count;i++){
+        STEVEOS_BOOT_FILE*f=&boot_files[i];char n[96];file_name(f,n,sizeof(n));
+        if(terminal_file_match(n,"SteveOS/Server/server.conf")){selected_file=(int)i;if(f->data&&f->size)load_text_file(f);return;}
+    }
+    current_app=APP_FILES;file_filter=0;mark_dirty();
+}
 static void terminal_add(const char*s){if(terminal_count<TERM_LINES){size_t i=0;while(s[i]&&i<63){terminal_lines[terminal_count][i]=s[i];i++;}terminal_lines[terminal_count][i]=0;terminal_count++;}else{for(int r=1;r<TERM_LINES;r++)for(int c=0;c<64;c++)terminal_lines[r-1][c]=terminal_lines[r][c];size_t i=0;while(s[i]&&i<63){terminal_lines[TERM_LINES-1][i]=s[i];i++;}terminal_lines[TERM_LINES-1][i]=0;}}
 static int terminal_file_match(const char*a,const char*b){
     while(*a&&*b){
@@ -1356,7 +1376,7 @@ static void launch_app(int app){
     if(app==APP_BROWSER){browser_url[0]=0;browser_loaded=0;browser_scroll=0;browser_status=0;browser_raw[0]=0;browser_text[0]=0;browser_title[0]=0;browser_link_count=0;browser_history_count=0;browser_history_pos=0;browser_history_lock=0;browser_tab_count=1;browser_current_tab=0;browser_tabs[0][0]=0;}
     if(app==APP_INSTALLER)refresh_install_targets();
     if(app==APP_STORE){scan_app_packages();app_download_focus=1;app_download_url[0]=0;}
-    if(app==APP_SERVER||app==APP_ADVANCED||app==APP_CONTROL)refresh_network_info();
+    if(app==APP_SERVER){refresh_network_info();refresh_install_targets();if(server_runtime_detected())server_install_state=2;}if(app==APP_ADVANCED)refresh_network_info();if(app==APP_CONTROL)refresh_network_info();
     mark_dirty();
 }
 static void app_click(uint32_t x,uint32_t y){
@@ -1414,6 +1434,7 @@ static void app_click(uint32_t x,uint32_t y){
             }
             mark_dirty();return;
         }
+        if(hit(x,y,414,278,170,38)){open_server_config();return;}
         if(hit(x,y,42,390,(int)width-84,80)){service_flags^=7;save_settings();mark_dirty();return;}
     }
     else if(current_app==APP_ADVANCED){
@@ -1550,6 +1571,7 @@ static void handle_scan(uint8_t s){
     }
     if(current_app==APP_SERVER){
         if(s==0x1C&&server_install_state==2&&boot_info->uefi_launch_server){LAUNCHSERVER fn=(LAUNCHSERVER)(uintptr_t)boot_info->uefi_launch_server;fn();return;}
+        if(s==0x18){open_server_config();return;}
         if(s==2||s==3||s==4){service_flags^=1u<<(s-2);save_settings();}
         else if(s==5){if(boot_info->uefi_install_server&&install_target_count){INSTALLSERVER fn=(INSTALLSERVER)(uintptr_t)boot_info->uefi_install_server;uint64_t st=fn((uint64_t)(install_target_pick>=0?install_target_pick:0));server_install_state=(st==0)?2:3;}}
         mark_dirty();return;
