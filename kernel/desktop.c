@@ -30,6 +30,7 @@ typedef uint64_t (__attribute__((ms_abi)) *WRITEFILE)(const uint16_t*,const void
 typedef uint64_t (__attribute__((ms_abi)) *LISTTARGETS)(STEVEOS_INSTALL_TARGET*,uint64_t);
 typedef uint64_t (__attribute__((ms_abi)) *INSTALLSELF)(uint64_t);
 typedef uint64_t (__attribute__((ms_abi)) *INSTALLAPP)(const uint16_t*);
+typedef uint64_t (__attribute__((ms_abi)) *DOWNLOADAPP)(const uint16_t*,const uint16_t*);
 typedef uint64_t (__attribute__((ms_abi)) *LAUNCHAPP)(const uint16_t*);
 typedef uint64_t (__attribute__((ms_abi)) *NETINFO)(STEVEOS_NETWORK_INFO*);
 typedef struct { uint32_t magic; uint8_t light; uint8_t scale; uint8_t accent; uint8_t service_flags; uint8_t logging; uint8_t boot_delay; uint8_t reserved0; uint32_t reserved; } SETTINGS;
@@ -66,7 +67,8 @@ static int install_target_pick=-1;
 static uint8_t install_armed;
 static int app_package_indices[24];
 static int app_package_count,app_package_pick=-1;
-static uint8_t app_install_done;
+static uint8_t app_install_done,app_download_focus;
+static char app_download_url[BROWSER_URL_MAX+1];
 static STEVEOS_NETWORK_INFO network_info;
 static uint8_t network_info_valid;
 static uint8_t service_flags,logging_level,boot_delay;
@@ -336,6 +338,18 @@ static void scan_app_packages(void){
     for(uint64_t i=0;i<boot_info->boot_file_count&&app_package_count<24;i++)
         if(is_app_package(&boot_files[i]))app_package_indices[app_package_count++]=(int)i;
 }
+static void app_download_selected(void){
+    if(!boot_info->uefi_download_app||!app_download_url[0])return;
+    uint16_t url[ BROWSER_URL_MAX+1 ];
+    for(size_t i=0;i<BROWSER_URL_MAX&&app_download_url[i];i++)url[i]=(uint16_t)(unsigned char)app_download_url[i],url[i+1]=0;
+    const char*p=app_download_url;size_t last=0;for(size_t i=0;p[i];i++)if(p[i]=='/'||p[i]=='\\')last=i+1;
+    uint16_t name[96];size_t n=0;for(size_t i=last;p[i]&&n+1<sizeof(name)/sizeof(name[0]);i++)name[n++]=(uint16_t)(unsigned char)p[i];name[n]=0;
+    if(!n)return;
+    DOWNLOADAPP fn=(DOWNLOADAPP)(uintptr_t)boot_info->uefi_download_app;
+    uint64_t st=fn(url,name);
+    app_install_done=(st==0)?1:2;
+    if(st==0)scan_app_packages();
+}
 static void app_install_selected(void){
     if(app_package_pick<0||app_package_pick>=app_package_count||!boot_info->uefi_install_app)return;
     int idx=app_package_indices[app_package_pick];
@@ -514,13 +528,16 @@ static void draw_installer(void){
 static void draw_store(void){
     window_bar("APP STORE","NATIVE UEFI APPLICATION PACKAGES");
     text(42,116,"AVAILABLE PACKAGES",accent_color(),1);
-    text(42,138,"Packages are EFI applications stored under the Apps folder.",sub_color(),1);
+    fill_rect(42,134,(int)width-84,34,bg_color());stroke_rect(42,134,(int)width-84,34,app_download_focus?accent_color():panel2_color());
+    text_clip(54,143,app_download_url[0]?app_download_url:"DOWNLOAD EFI APP FROM URL",text_color(),1,(int)width-110);
+    text((int)width-150,143,"ENTER FETCH",sub_color(),1);
+    text(42,176,"Packages are EFI applications stored under the Apps folder.",sub_color(),1);
     if(app_package_count==0){
         text(42,188,"NO APP PACKAGES ON THIS BOOT VOLUME.",text_color(),2);
         text(42,224,"ADD A .EFI APPLICATION UNDER \\Apps TO MAKE IT INSTALLABLE.",sub_color(),1);
     }
-    for(int i=0;i<app_package_count&&i<8;i++){
-        int y=174+i*48;int idx=app_package_indices[i];char name[80];file_name(&boot_files[idx],name,sizeof(name));
+    for(int i=0;i<app_package_count&&i<7;i++){
+        int y=214+i*48;int idx=app_package_indices[i];char name[80];file_name(&boot_files[idx],name,sizeof(name));
         fill_rect(42,y,(int)width-84,38,i==app_package_pick?accent_dark():panel_color());
         text(58,y+11,name,i==app_package_pick?0xFFFFFFu:text_color(),1);
         text((int)width-290,y+11,"UEFI APP",sub_color(),1);
@@ -1230,7 +1247,7 @@ static void launch_app(int app){
     browser_focus=app==APP_BROWSER?1:0;
     if(app==APP_BROWSER){browser_url[0]=0;browser_loaded=0;browser_scroll=0;browser_status=0;browser_raw[0]=0;browser_text[0]=0;browser_title[0]=0;browser_link_count=0;browser_history_count=0;browser_history_pos=0;browser_history_lock=0;browser_tab_count=1;browser_current_tab=0;browser_tabs[0][0]=0;}
     if(app==APP_INSTALLER)refresh_install_targets();
-    if(app==APP_STORE)scan_app_packages();
+    if(app==APP_STORE){scan_app_packages();app_download_focus=1;app_download_url[0]=0;}
     if(app==APP_SERVER||app==APP_ADVANCED)refresh_network_info();
     mark_dirty();
 }
@@ -1265,7 +1282,8 @@ static void app_click(uint32_t x,uint32_t y){
         if(hit(x,y,(int)width-180,(int)height-136,138,38)){refresh_install_targets();mark_dirty();return;}
     }
     else if(current_app==APP_STORE){
-        for(int i=0;i<app_package_count&&i<8;i++)if(hit(x,y,42,174+i*48,(int)width-84,38)){app_package_pick=i;app_install_done=0;mark_dirty();return;}
+        if(hit(x,y,42,134,(int)width-84,34)){app_download_focus=1;mark_dirty();return;}
+        for(int i=0;i<app_package_count&&i<7;i++)if(hit(x,y,42,214+i*48,(int)width-84,38)){app_package_pick=i;app_install_done=0;mark_dirty();return;}
         if(hit(x,y,42,(int)height-136,150,38)&&app_package_pick>=0){app_install_selected();mark_dirty();return;}
         if(hit(x,y,208,(int)height-136,150,38)&&app_package_pick>=0){app_install_selected();if(app_install_done==1)app_launch_selected();mark_dirty();return;}
     }
@@ -1385,6 +1403,28 @@ static void handle_scan(uint8_t s){
     if(menu_open){menu_key(s);return;}
     if(current_app==APP_EDITOR){note_key(s);return;}if(current_app==APP_BROWSER){browser_key(s);return;}if(current_app==APP_CALC){calc_key(s);return;}if(current_app==APP_TERMINAL){terminal_key(s);return;}
     if(current_app==APP_CONTROL){if(s>=2&&s<=9){const int targets[]={APP_SETTINGS,APP_SETTINGS,APP_BROWSER,APP_FILES,APP_TASKS,APP_SYSINFO,APP_FILES,APP_DEVICES};launch_app(targets[s-2]);return;}mark_dirty();return;}
+    if(current_app==APP_INSTALLER){
+        if(s==0x1C){if(install_target_pick>=0){if(!install_armed)install_armed=1;else install_self_now();}mark_dirty();return;}
+        if(s==0x48&&install_target_pick>0)install_target_pick--;else if(s==0x50&&install_target_pick+1<(int)install_target_count)install_target_pick++;
+        if(s==0x52)refresh_install_targets();mark_dirty();return;
+    }
+    if(current_app==APP_STORE){
+        if(app_download_focus){
+            if(s==0x1C){app_download_focus=0;app_download_selected();mark_dirty();return;}
+            if(s==0x0E){size_t n=0;while(app_download_url[n])n++;if(n)app_download_url[n-1]=0;mark_dirty();return;}
+            char ch=key_char(s);if(ch&&((ch>='A'&&ch<='Z')||(ch>='a'&&ch<='z')||(ch>='0'&&ch<='9')||ch==':'||ch=='/'||ch=='.'||ch=='-'||ch=='_'||ch=='?'||ch=='&'||ch=='='||ch=='%'||ch=='#'||ch=='+')){
+                size_t n=0;while(app_download_url[n])n++;if(n<BROWSER_URL_MAX){app_download_url[n++]=shift_down?shifted(ch):ch;app_download_url[n]=0;}mark_dirty();return;
+            }
+        }else{
+            if(s==0x48&&app_package_pick>0)app_package_pick--;else if(s==0x50&&app_package_pick+1<app_package_count)app_package_pick++;
+            else if(s==0x1C&&app_package_pick>=0){app_install_selected();}
+            else if(s==0x4C&&app_package_pick>=0){app_launch_selected();}
+            else if(s==0x2E){app_download_focus=1;}
+        }
+        mark_dirty();return;
+    }
+    if(current_app==APP_SERVER){if(s==2){service_flags^=1;save_settings();}else if(s==3){service_flags^=2;save_settings();}mark_dirty();return;}
+    if(current_app==APP_ADVANCED){if(s==2)service_flags^=1;else if(s==3)service_flags^=2;else if(s==4)service_flags^=4;else if(s==5)logging_level^=1;else if(s==6)boot_delay=boot_delay>=10?0:boot_delay+1;save_settings();mark_dirty();return;}
     if(current_app==APP_FILES){
         if(s>=2&&s<=7){file_filter=(int)(s-2);file_scroll=0;selected_file=-1;}
         else if(s==0x48||s==0x4B)move_file_selection(-1);
