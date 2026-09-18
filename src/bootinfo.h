@@ -16,6 +16,24 @@ typedef struct {
 } STEVEOS_BOOT_FILE;
 
 typedef struct {
+    uint64_t handle;
+    uint64_t blocks;
+    uint32_t block_size;
+    uint8_t removable;
+    uint8_t present;
+    uint8_t filesystem;
+    uint8_t reserved;
+} STEVEOS_INSTALL_TARGET;
+
+typedef struct {
+    uint32_t state;
+    uint32_t media_present;
+    uint8_t mac[32];
+    uint32_t mac_size;
+    uint32_t reserved;
+} STEVEOS_NETWORK_INFO;
+
+typedef struct {
     uint64_t magic;
     uint64_t framebuffer_base;
     uint64_t framebuffer_size;
@@ -36,6 +54,10 @@ typedef struct {
     uint64_t uefi_get_time;
     uint64_t uefi_http_get;
     uint64_t uefi_write_text;
+    uint64_t uefi_list_install_targets;
+    uint64_t uefi_install_self;
+    uint64_t uefi_install_app;
+    uint64_t uefi_network_info;
     uint64_t boot_files;
     uint64_t boot_file_count;
     uint64_t boot_device_handle;
