@@ -406,7 +406,14 @@ static void app_launch_selected(void){
     if(is_windows_package(&boot_files[idx])){
         if(!boot_info->uefi_run_windows_app)return;
         RUNWINDOWSAPP fn=(RUNWINDOWSAPP)(uintptr_t)boot_info->uefi_run_windows_app;
-        fn(boot_files[idx].name);
+        uint16_t path[STEVEOS_BOOT_FILE_NAME_MAX+16];
+        size_t n=0;while(n<STEVEOS_BOOT_FILE_NAME_MAX&&boot_files[idx].name[n])n++;
+        size_t start=0;for(size_t i=0;i<n;i++)if(boot_files[idx].name[i]=='/'||boot_files[idx].name[i]=='\\')start=i+1;
+        const uint16_t prefix[]={L'\\',L'S',L't',L'e',L'v',L'e',L'O',L'S',L'\\',L'A',L'p',L'p',L's',L'\\'};
+        size_t p=0;for(size_t i=0;i<sizeof(prefix)/sizeof(prefix[0]);i++)path[p++]=prefix[i];
+        for(size_t i=start;i<n&&p+1<sizeof(path)/sizeof(path[0]);i++)path[p++]=boot_files[idx].name[i];
+        path[p]=0;
+        fn(path);
         return;
     }
     if(!boot_info->uefi_launch_app)return;
