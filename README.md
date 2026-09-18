@@ -2,7 +2,7 @@
 
 A growing x86-64 operating system project with a native framebuffer desktop, real firmware-backed networking, hardware input drivers, persistent settings, and a Linux Mint-inspired desktop experience.
 
-## Current milestone: native desktop + server foundation 1.0
+## Current milestone: native desktop + server foundation 1.1
 
 
 steveOS boots through UEFI, selects a GOP graphics mode, prepares the native kernel environment, and launches the native framebuffer desktop while deliberately retaining the UEFI services needed by selected compatibility bridges.
@@ -30,7 +30,7 @@ The native desktop includes:
 
 Networking is deliberately not probed during early boot. Web requests are on-demand from the desktop so firmware networking is only entered when the user asks the browser to load a page.
 
-The GitHub Actions workflow builds `BOOTX64.EFI` and a 64 MiB FAT32 `steveOS.img` USB image automatically.
+GitHub Actions builds `BOOTX64.EFI`, a 512 MiB FAT32 `steveOS.img`, and a rolling `latest` GitHub release used by the native Update Centre.
 
 ## Mint integration
 
@@ -73,3 +73,11 @@ See [docs/SERVER.md](docs/SERVER.md) for the Discord, Tailscale and Windows runt
 Download the `steveOS-boot` artifact from a successful GitHub Actions run. The `steveOS.img` file can be tested in QEMU or written to a USB drive. The native desktop is intended for real x86-64 UEFI hardware as well as emulators.
 
 On real hardware, networking depends on the firmware exposing the UEFI HTTP service and having usable network configuration. Unsupported firmware will leave the browser functional as a UI but unable to fetch pages.
+
+## Hardware and compatibility
+
+Server Mode now uses Alpine Linux 3.24.2 with the LTS kernel and exposes the host device tree to its Linux userspace. The runtime includes broad command-line tooling, Intel firmware, networking, Wine/Xvfb for Windows `.EXE` programs, FFmpeg, GStreamer, ALSA, PipeWire and V4L2 tooling for audio/video devices. Camera devices appear as `/dev/video*` and audio devices as `/dev/snd` when the Linux kernel and hardware expose them. These are Server Mode capabilities, not yet native SteveOS kernel drivers.
+
+## Updates
+
+SteveOS checks the public VERSION file on GitHub after startup and can show an UPDATE READY notification. Advanced Settings and the terminal commands UPDATE, UPDATE CHECK and UPDATE INSTALL can check or install the rolling latest release. Installing an update replaces the native EFI loader and Server Mode runtime files; reboot after a successful install.
