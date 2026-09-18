@@ -58,3 +58,22 @@ The major missing browser layers are a native network stack, TLS ownership, a ri
 ## Installation safety
 
 The installer service only writes to a target device explicitly supplied by the installer UI. It does not automatically select a disk or repartition storage.
+
+
+## Server runtime
+
+The native Server Manager is now part of the desktop. It tracks startup intent for Discord and Tailscale and exposes the firmware network state.
+
+Discord bot execution requires a userspace runtime plus DNS, TCP, TLS and WebSocket support before a Node.js bot can run directly on SteveOS.
+
+Tailscale execution requires userspace daemon support plus UDP/IP and a TUN-equivalent interface with WireGuard packet handling.
+
+The immediate implementation order is:
+1. Native NIC RX/TX
+2. IPv4, ARP, UDP and TCP
+3. DNS and TLS
+4. WebSocket support
+5. ELF64 userspace/process runtime
+6. Service supervisor
+7. Discord bot runtime integration
+8. Tailscale/WireGuard runtime integration
