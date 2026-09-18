@@ -307,6 +307,61 @@ static void refresh_network_info(void){
 static const char*service_state(uint8_t bit){
     return (service_flags&bit)?"ARMED":"OFF";
 }
+static int is_app_package(const STEVEOS_BOOT_FILE*f){
+    if(!f||!f->name[0])return 0;
+    size_t n=0;
+    while(n<STEVEOS_BOOT_FILE_NAME_MAX&&f->name[n])n++;
+    int in_apps=0,efi=0;
+    for(size_t i=0;i<n;i++){
+        if((f->name[i]=='/'||f->name[i]=='\\')&&i>=4){
+            char a=(char)f->name[i-4],b=(char)f->name[i-3],d=(char)f->name[i-2],e=(char)f->name[i-1];
+            if((a=='A'||a=='a')&&(b=='p'||b=='P')&&(d=='p'||d=='P')&&(e=='s'||e=='S'))in_apps=1;
+        }
+    }
+    if(n>=4){
+        char a=(char)f->name[n-4],b=(char)f->name[n-3],d=(char)f->name[n-2],e=(char)f->name[n-1];
+        efi=(a=='.'&&(b=='e'||b=='E')&&(d=='f'||d=='F')&&(e=='i'||e=='I'));
+    }
+    return in_apps&&efi;
+}
+static void refresh_install_targets(void){
+    install_target_count=0;install_target_pick=-1;install_armed=0;
+    if(!boot_info->uefi_list_install_targets)return;
+    LISTTARGETS fn=(LISTTARGETS)(uintptr_t)boot_info->uefi_list_install_targets;
+    install_target_count=fn(install_targets,16);
+}
+static void scan_app_packages(void){
+    app_package_count=0;app_package_pick=-1;app_install_done=0;
+    if(!boot_files||!boot_info)return;
+    for(uint64_t i=0;i<boot_info->boot_file_count&&app_package_count<24;i++)
+        if(is_app_package(&boot_files[i]))app_package_indices[app_package_count++]=(int)i;
+}
+static void app_install_selected(void){
+    if(app_package_pick<0||app_package_pick>=app_package_count||!boot_info->uefi_install_app)return;
+    int idx=app_package_indices[app_package_pick];
+    INSTALLAPP fn=(INSTALLAPP)(uintptr_t)boot_info->uefi_install_app;
+    uint64_t st=fn(boot_files[idx].name);
+    app_install_done=(st==0)?1:2;
+}
+static void app_launch_selected(void){
+    if(app_package_pick<0||app_package_pick>=app_package_count||!boot_info->uefi_launch_app)return;
+    int idx=app_package_indices[app_package_pick];
+    uint16_t path[STEVEOS_BOOT_FILE_NAME_MAX+16];
+    size_t n=0;while(n<STEVEOS_BOOT_FILE_NAME_MAX&&boot_files[idx].name[n])n++;
+    size_t start=0;for(size_t i=0;i<n;i++)if(boot_files[idx].name[i]=='/'||boot_files[idx].name[i]=='\\')start=i+1;
+    const uint16_t prefix[]={L'\\',L'S',L't',L'e',L'v',L'e',L'O',L'S',L'\\',L'A',L'p',L'p',L's',L'\\'};
+    size_t p=0;for(size_t i=0;i<sizeof(prefix)/sizeof(prefix[0]);i++)path[p++]=prefix[i];
+    for(size_t i=start;i<n&&p+1<sizeof(path)/sizeof(path[0]);i++)path[p++]=boot_files[idx].name[i];
+    path[p]=0;
+    LAUNCHAPP fn=(LAUNCHAPP)(uintptr_t)boot_info->uefi_launch_app;
+    fn(path);
+}
+static void install_self_now(void){
+    if(install_target_pick<0||!boot_info->uefi_install_self)return;
+    INSTALLSELF fn=(INSTALLSELF)(uintptr_t)boot_info->uefi_install_self;
+    uint64_t st=fn((uint64_t)install_target_pick);
+    install_armed=(st==0)?2:3;
+}
 static void panel(void){
     fill_rect(0,0,(int)width,(int)height,bg_color());
     fill_rect(0,0,(int)width,42,light_theme?0xDCE3E7u:0x151D26u);
