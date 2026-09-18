@@ -486,6 +486,85 @@ static void draw_start_menu(void){
     text(x+30,y+mh-36,menu_search[0]?"TYPE TO FILTER  ENTER LAUNCH  ESC CLOSE":"TYPE TO SEARCH  ENTER LAUNCH",sub_color(),1);
 }
 
+static void draw_installer(void){
+    window_bar("INSTALL STEVEOS","SAFE EXISTING-FILESYSTEM INSTALLER");
+    text(42,116,"TARGET VOLUMES",accent_color(),1);
+    text(42,138,"STEVEOS WILL NOT PARTITION OR FORMAT A DISK.",sub_color(),1);
+    text(42,158,"IT WRITES EFI/BOOT/BOOTX64.EFI TO THE SELECTED VOLUME.",sub_color(),1);
+    int shown=install_target_count>8?8:(int)install_target_count;
+    for(int i=0;i<shown;i++){
+        int y=184+i*40;
+        fill_rect(42,y,(int)width-84,32,i==install_target_pick?accent_dark():panel_color());
+        text(58,y+10,install_targets[i].removable?"REMOVABLE VOLUME":"INTERNAL VOLUME",i==install_target_pick?0xFFFFFFu:text_color(),1);
+        u64_text((int)width-250,y+10,(install_targets[i].blocks*(uint64_t)install_targets[i].block_size)/1000000000ULL,i==install_target_pick?0xFFFFFFu:text_color(),1);
+        text((int)width-190,y+10,"GB",sub_color(),1);
+        if(!install_targets[i].filesystem)text((int)width-150,y+10,"NO FS",danger_color(),1);else text((int)width-150,y+10,"EFI FS",good_color(),1);
+    }
+    fill_rect(42,(int)height-136,150,38,install_armed==1?accent_dark():panel2_color());
+    text(62,(int)height-125,install_armed==1?"ARMED":"ARM INSTALL",text_color(),1);
+    fill_rect(208,(int)height-136,150,38,install_armed==1?accent_color():panel2_color());
+    text(232,(int)height-125,"INSTALL STEVEOS",text_color(),1);
+    fill_rect((int)width-180,(int)height-136,138,38,panel2_color());
+    text((int)width-160,(int)height-125,"REFRESH",text_color(),1);
+    if(install_armed==2)text(42,(int)height-96,"INSTALL COMPLETE",good_color(),1);
+    else if(install_armed==3)text(42,(int)height-96,"INSTALL FAILED",danger_color(),1);
+    else text(42,(int)height-96,"SELECT A VOLUME, ARM INSTALL, THEN CONFIRM.",sub_color(),1);
+    taskbar();
+}
+static void draw_store(void){
+    window_bar("APP STORE","NATIVE UEFI APPLICATION PACKAGES");
+    text(42,116,"AVAILABLE PACKAGES",accent_color(),1);
+    text(42,138,"Packages are EFI applications stored under the Apps folder.",sub_color(),1);
+    if(app_package_count==0){
+        text(42,188,"NO APP PACKAGES ON THIS BOOT VOLUME.",text_color(),2);
+        text(42,224,"ADD A .EFI APPLICATION UNDER \\Apps TO MAKE IT INSTALLABLE.",sub_color(),1);
+    }
+    for(int i=0;i<app_package_count&&i<8;i++){
+        int y=174+i*48;int idx=app_package_indices[i];char name[80];file_name(&boot_files[idx],name,sizeof(name));
+        fill_rect(42,y,(int)width-84,38,i==app_package_pick?accent_dark():panel_color());
+        text(58,y+11,name,i==app_package_pick?0xFFFFFFu:text_color(),1);
+        text((int)width-290,y+11,"UEFI APP",sub_color(),1);
+    }
+    fill_rect(42,(int)height-136,150,38,panel2_color());text(62,(int)height-125,"INSTALL",text_color(),1);
+    fill_rect(208,(int)height-136,150,38,app_package_pick>=0?accent_color():panel2_color());text(228,(int)height-125,"INSTALL + RUN",text_color(),1);
+    text(42,(int)height-96,app_install_done==1?"PACKAGE INSTALLED":app_install_done==2?"PACKAGE ACTION FAILED":"SELECT A PACKAGE",app_install_done==2?danger_color():app_install_done==1?good_color():sub_color(),1);
+    taskbar();
+}
+static void draw_server(void){
+    window_bar("SERVER MANAGER","DISCORD + TAILSCALE");
+    text(42,116,"SERVER SERVICES",accent_color(),1);
+    fill_rect(42,140,(int)width-84,96,panel_color());
+    text(58,156,"DISCORD BOT",text_color(),1);
+    text(58,180,"READY STATE",sub_color(),1);
+    text(170,180,service_state(1),accent_color(),1);
+    text(58,202,"REQUIREMENT: USERSPACE + TCP + TLS + WEBSOCKET",sub_color(),1);
+    fill_rect(42,248,(int)width-84,96,panel_color());
+    text(58,264,"TAILSCALE",text_color(),1);
+    text(58,288,"READY STATE",sub_color(),1);
+    text(170,288,service_state(2),accent_color(),1);
+    text(58,310,"REQUIREMENT: USERSPACE + TUN/WIREGUARD + UDP",sub_color(),1);
+    fill_rect(42,356,(int)width-84,108,panel2_color());
+    text(58,374,"CURRENT NETWORK",accent_color(),1);
+    text(58,398,network_info_valid?(network_info.state==2?"NETWORK INITIALISED":network_info.state==1?"NETWORK STARTED":"NETWORK STOPPED"):"NETWORK INFO UNAVAILABLE",text_color(),1);
+    text(58,420,network_info_valid?(network_info.media_present?"LINK PRESENT":"NO LINK"):"UEFI SNP NOT FOUND",sub_color(),1);
+    text(58,442,"HTTP CLIENT: UEFI FIRMWARE BRIDGE",sub_color(),1);
+    fill_rect(42,(int)height-144,160,38,(service_flags&1)?accent_dark():panel2_color());text(62,(int)height-133,(service_flags&1)?"DISCORD ARMED":"ARM DISCORD",text_color(),1);
+    fill_rect(214,(int)height-144,170,38,(service_flags&2)?accent_dark():panel2_color());text(232,(int)height-133,(service_flags&2)?"TAILSCALE ARMED":"ARM TAILSCALE",text_color(),1);
+    text(42,(int)height-98,"ARMING A SERVICE STORES INTENT ONLY UNTIL ITS NATIVE RUNTIME EXISTS.",sub_color(),1);
+    taskbar();
+}
+static void draw_advanced(void){
+    window_bar("ADVANCED SETTINGS","PERSISTENT SERVICE + DEBUG CONTROLS");
+    text(42,116,"SERVER STARTUP",accent_color(),1);
+    fill_rect(42,136,(int)width-84,48,panel_color());text(58,151,"AUTO-START DISCORD BOT",text_color(),1);text((int)width-180,151,(service_flags&1)?"ON":"OFF",accent_color(),1);
+    fill_rect(42,194,(int)width-84,48,panel_color());text(58,209,"AUTO-START TAILSCALE",text_color(),1);text((int)width-180,209,(service_flags&2)?"ON":"OFF",accent_color(),1);
+    fill_rect(42,252,(int)width-84,48,panel_color());text(58,267,"REMOTE SHELL",text_color(),1);text((int)width-180,267,(service_flags&4)?"ON":"OFF",accent_color(),1);
+    fill_rect(42,310,(int)width-84,48,panel_color());text(58,325,"VERBOSE LOGGING",text_color(),1);text((int)width-180,325,logging_level?"ON":"OFF",accent_color(),1);
+    fill_rect(42,368,(int)width-84,48,panel_color());text(58,383,"BOOT DELAY",text_color(),1);u64_text((int)width-180,383,boot_delay,text_color(),1);text((int)width-150,383,"SECONDS",sub_color(),1);
+    text(42,450,"NETWORK RUNTIME",accent_color(),1);
+    fill_rect(42,470,(int)width-84,100,panel2_color());text(58,486,network_info_valid?(network_info.media_present?"LINK PRESENT":"NO CARRIER"):"NO NETWORK ADAPTER",text_color(),1);text(58,510,"UEFI HTTP CLIENT CAN ACCESS INTERNET WHEN FIRMWARE NETWORKING IS CONFIGURED.",sub_color(),1);text(58,534,"NATIVE TCP/IP + TLS ARE STILL FUTURE RUNTIME COMPONENTS.",sub_color(),1);
+    text(42,(int)height-98,"ARROWS CHANGE OPTIONS  •  F5 SAVE  •  VALUES ARE PERSISTED IN UEFI NVRAM",sub_color(),1);taskbar();
+}
 static void draw_desktop(void){
     panel();
     text(28,72,"WELCOME",text_color(),3);
