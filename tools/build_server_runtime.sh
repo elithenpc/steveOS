@@ -25,7 +25,7 @@ chroot $ROOT /sbin/apk add --no-cache \
   ca-certificates curl git openssh-server \
   iproute2 iptables kmod \
   nodejs npm python3 py3-pip \
-  tailscale linux-virt linux-firmware-intel
+  tailscale wpa_supplicant linux-virt linux-firmware-intel
 
 mkdir -p $ROOT/etc/steveos $ROOT/var/lib/tailscale $ROOT/opt/discord-bot
 
@@ -36,10 +36,15 @@ DISCORD_RUNTIME=node
 DISCORD_BOT_REPO=
 DISCORD_START="node index.js"
 DISCORD_TOKEN=
+WIFI_ENABLE=0
+WIFI_SSID=
+WIFI_PASSWORD=
 TAILSCALE_ENABLE=0
+TAILSCALE_MODE=normal
 TAILSCALE_AUTHKEY=
 TAILSCALE_ADVERTISE_ROUTES=
 TAILSCALE_EXIT_NODE=0
+TAILSCALE_ADVERTISE_ROUTES=
 SSH_ENABLE=0
 EOF
 
@@ -72,6 +77,26 @@ CONF=/etc/steveos/server.conf
 
 hostname "$SERVER_HOSTNAME" 2>/dev/null || true
 
+if [ "$WIFI_ENABLE" = 1 ] && [ -n "$WIFI_SSID" ]; then
+    mkdir -p /etc/wpa_supplicant
+    cat > /etc/wpa_supplicant/steveos.conf <<WPAEOF
+ctrl_interface=/run/wpa_supplicant
+update_config=0
+network={
+    ssid="$WIFI_SSID"
+    psk="$WIFI_PASSWORD"
+}
+WPAEOF
+    for sysif in /sys/class/net/*; do
+        iface=$(basename "$sysif")
+        [ "$iface" = lo ] && continue
+        if [ -d "/sys/class/net/$iface/wireless" ]; then
+            ip link set "$iface" up 2>/dev/null || true
+            wpa_supplicant -B -i "$iface" -c /etc/wpa_supplicant/steveos.conf 2>/dev/null || true
+        fi
+    done
+fi
+
 for attempt in 1 2 3 4 5 6 7 8 9 10; do
     linked=0
     for sysif in /sys/class/net/*; do
@@ -94,7 +119,11 @@ start_tailscale() {
     [ "$TAILSCALE_ENABLE" = 1 ] || return 0
     modprobe tun 2>/dev/null || true
     mkdir -p /var/lib/tailscale /run/tailscale
-    tailscaled --state=/var/lib/tailscale/tailscaled.state --socket=/run/tailscale/tailscaled.sock &
+    if [ "$TAILSCALE_MODE" = userspace ]; then
+        tailscaled --tun=userspace-networking --socks5-server=localhost:1055 --outbound-http-proxy-listen=localhost:1056 --state=/var/lib/tailscale/tailscaled.state --socket=/run/tailscale/tailscaled.sock &
+    else
+        tailscaled --state=/var/lib/tailscale/tailscaled.state --socket=/run/tailscale/tailscaled.sock &
+    fi
     for i in 1 2 3 4 5 6 7 8 9 10; do
         [ -S /run/tailscale/tailscaled.sock ] && break
         sleep 1
