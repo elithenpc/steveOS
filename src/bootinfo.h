@@ -61,6 +61,8 @@ typedef struct {
     uint64_t uefi_install_app;
     uint64_t uefi_download_app;
     uint64_t uefi_launch_app;
+    uint64_t uefi_install_windows_app;
+    uint64_t uefi_run_windows_app;
     uint64_t uefi_network_info;
     uint64_t boot_files;
     uint64_t boot_file_count;
