@@ -25,7 +25,7 @@ proot -R $ROOT -b /proc:/proc -b /sys:/sys -b /dev:/dev /sbin/apk add --no-cache
   bash coreutils findutils grep sed gawk util-linux pciutils usbutils procps \
   ca-certificates curl wget git openssh-server \
   iproute2 iptables kmod \
-  nodejs npm python3 py3-pip \
+  nodejs npm python3 py3-pip py3-virtualenv \
   tailscale wpa_supplicant \
   ffmpeg gstreamer gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugins-ugly \
   alsa-utils pipewire pipewire-pulse pipewire-alsa v4l-utils \
@@ -36,7 +36,7 @@ proot -R $ROOT -b /proc:/proc -b /sys:/sys -b /dev:/dev /sbin/apk add --no-cache
 proot -R $ROOT -b /proc:/proc -b /sys:/sys -b /dev:/dev /sbin/apk add --no-cache \
   --repository https://dl-cdn.alpinelinux.org/alpine/edge/main \
   --repository https://dl-cdn.alpinelinux.org/alpine/edge/community \
-  wine gst-libav libcamera libcamera-tools
+  wine
 
 mkdir -p $ROOT/etc/steveos $ROOT/var/lib/tailscale $ROOT/opt/discord-bot
 
@@ -202,7 +202,8 @@ start_discord() {
     if [ -f package.json ]; then
         npm install --omit=dev
     elif [ -f requirements.txt ]; then
-        python3 -m venv /opt/discord-bot/.venv
+        rm -rf /opt/discord-bot/.venv
+        python3 -m virtualenv --clear /opt/discord-bot/.venv
         /opt/discord-bot/.venv/bin/pip install -r requirements.txt
     fi
 
