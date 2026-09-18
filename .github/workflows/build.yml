@@ -18,6 +18,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc binutils gnu-efi python3 python3-pil mtools dosfstools cpio gzip grub-efi-amd64-bin grub-common curl proot
 
+      - name: Validate Server Mode script
+        run: sh -n tools/build_server_runtime.sh
+
       - name: Build Server Mode runtime
         run: sh tools/build_server_runtime.sh
 
