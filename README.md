@@ -13,7 +13,7 @@ The native desktop includes:
 - Real Mint-Y application icons packed into the native kernel image
 - Disk installer that writes SteveOS to an existing EFI filesystem and registers a UEFI boot option
 - Native EFI App Store with local package installation, online package downloads, and UEFI app launching
-- Server Manager for Discord Bot and Tailscale service configuration intent
+- Server Manager for Discord Bot, Tailscale and Windows EXE runtime
 - Web browser with on-demand UEFI HTTP/HTTPS fetches, HTML text extraction, links, scrolling, back/forward history, tabs, bookmarks, page saving, local HTML, and BMP image previews
 - Calculator with integer expression parsing, parentheses, operator precedence, and unary minus
 - Persistent text editor / notepad backed by UEFI NVRAM
@@ -62,11 +62,11 @@ From the live USB, open **Installer**. SteveOS lists other EFI filesystem volume
 
 ## Apps
 
-Place UEFI `.EFI` applications under `\\Apps` on the boot volume to make them appear in App Store. App Store can install them to `\\SteveOS\\Apps`. It can also download an EFI application directly from a URL. Only launch EFI applications you trust because they execute with firmware-level privileges.
+Place UEFI `.EFI` or Windows `.EXE` applications under `\\Apps` on the boot volume to make them appear in App Store. App Store can install them to `\\SteveOS\\Apps`. EFI packages launch directly from firmware; EXE packages boot Server Mode and run through Wine. EXE compatibility varies by application and its Windows dependencies.
 
 ## Server
 
-See [docs/SERVER.md](docs/SERVER.md) for the Discord and Tailscale runtime plan. The current Server Manager records startup intent and network state, but native Discord/Tailscale execution requires the future userspace and network stack.
+See [docs/SERVER.md](docs/SERVER.md) for the Discord, Tailscale and Windows runtime details. Server Mode supplies the Linux userspace used for these compatibility services; the native SteveOS desktop does not directly execute Windows PE files.
 
 ## Testing
 
