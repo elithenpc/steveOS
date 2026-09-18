@@ -519,8 +519,6 @@ EFI_STATUS steveos_run_windows_app(const CHAR16 *source_path){
        !steveos_is_windows_safe_name(steveos_basename(source_path)))return EFI_INVALID_PARAMETER;
 
     EFI_FILE_PROTOCOL *root=NULL,*server=NULL,*probe=NULL;
-    st:
-    ;
     EFI_STATUS st=steveos_fs_open_volume(steveos_boot_device,&root);
     if(EFI_ERROR(st))return st;
     st=uefi_call_wrapper(root->Open,5,root,&server,L"SteveOS\\Server",EFI_FILE_MODE_READ|EFI_FILE_MODE_WRITE,EFI_FILE_DIRECTORY);
