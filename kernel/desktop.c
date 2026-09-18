@@ -589,7 +589,7 @@ static void draw_start_menu(void){
     for(int i=0;i<18;i++)if(contains_ci(menu_names[i],menu_search)){
         int row=shown%9,col=shown/9,bx=x+18+col*196,by=y+98+row*55;
         fill_rect(bx,by,180,45,(current_app==menu_apps[i])?panel2_color():bg_color());
-        static const int icon_map[]={0,1,2,3,7,6,5,4,7,7,7,6,15,14,15,15,6};draw_icon(bx+5,by-4,icon_map[i]);
+        static const int icon_map[]={0,1,2,3,7,6,5,4,7,7,7,6,15,14,15,15,6,15};draw_icon(bx+5,by-4,icon_map[i]);
         text(bx+66,by+12,menu_names[i],text_color(),1);
         shown++;
     }
