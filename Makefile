@@ -18,7 +18,7 @@ OBJCOPY_FLAGS := -j .text -j .sdata -j .data -j .dynamic -j .dynsym \
 CORE_OBJS := build/network.o build/storage.o build/memory.o build/fs.o build/installer.o \
              build/kernel.o build/interrupts.o build/tasks.o build/shell.o build/bootlog.o
 
-all: build/BOOTX64.EFI
+all: build/BOOTX64.EFI build/apps/Hello.efi
 
 build/boot.raw: blehhh.png tools/image_to_raw.py
 	python3 tools/image_to_raw.py
@@ -44,6 +44,16 @@ build/mint_icons.raw: third_party/mint-y-icons/usr/share/icons/Mint-Y/apps/64/br
 build/mint_icons.raw.o: build/mint_icons.raw
 	$(OBJCOPY) --input-target=binary --output-target=elf64-x86-64 \
 		--binary-architecture=i386:x86-64 build/mint_icons.raw build/mint_icons.raw.o
+
+build/apps/hello.o: apps/hello.c
+	mkdir -p build/apps
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/apps/hello.so: build/apps/hello.o
+	$(LD) $(LDFLAGS) $< -o $@ -lefi -lgnuefi
+
+build/apps/Hello.efi: build/apps/hello.so
+	$(OBJCOPY) $(OBJCOPY_FLAGS) $< $@
 
 build/boot.raw.o: build/boot.raw
 	$(OBJCOPY) --input-target=binary --output-target=elf64-x86-64 \
