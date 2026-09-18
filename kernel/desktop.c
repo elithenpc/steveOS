@@ -29,6 +29,8 @@ typedef uint64_t (__attribute__((ms_abi)) *HTTPGET)(const uint16_t*,char*,uint64
 typedef uint64_t (__attribute__((ms_abi)) *WRITEFILE)(const uint16_t*,const void*,uint64_t);
 typedef uint64_t (__attribute__((ms_abi)) *LISTTARGETS)(STEVEOS_INSTALL_TARGET*,uint64_t);
 typedef uint64_t (__attribute__((ms_abi)) *INSTALLSELF)(uint64_t);
+typedef uint64_t (__attribute__((ms_abi)) *INSTALLSERVER)(uint64_t);
+typedef uint64_t (__attribute__((ms_abi)) *LAUNCHSERVER)(void);
 typedef uint64_t (__attribute__((ms_abi)) *INSTALLAPP)(const uint16_t*);
 typedef uint64_t (__attribute__((ms_abi)) *DOWNLOADAPP)(const uint16_t*,const uint16_t*);
 typedef uint64_t (__attribute__((ms_abi)) *LAUNCHAPP)(const uint16_t*);
@@ -71,7 +73,7 @@ static uint8_t app_install_done,app_download_focus;
 static char app_download_url[BROWSER_URL_MAX+1];
 static STEVEOS_NETWORK_INFO network_info;
 static uint8_t network_info_valid;
-static uint8_t service_flags,logging_level,boot_delay,net_test_state;
+static uint8_t service_flags,logging_level,boot_delay,net_test_state,server_install_state;
 typedef struct {uint8_t bus,dev,fn,class_code,subclass;uint16_t vendor,device;} PCI_VIEW;
 static PCI_VIEW pci_devices[24];
 static int selected_file=-1,file_scroll,file_filter;
@@ -582,27 +584,35 @@ static void draw_store(void){
 }
 static void draw_server(void){
     window_bar("SERVER MANAGER","DISCORD + TAILSCALE");
-    text(42,116,"SERVER SERVICES",accent_color(),1);
-    fill_rect(42,140,(int)width-84,96,panel_color());
-    text(58,156,"DISCORD BOT",text_color(),1);
-    text(58,180,"READY STATE",sub_color(),1);
-    text(170,180,service_state(1),accent_color(),1);
-    text(58,202,"REQUIREMENT: USERSPACE + TCP + TLS + WEBSOCKET",sub_color(),1);
-    fill_rect(42,248,(int)width-84,96,panel_color());
-    text(58,264,"TAILSCALE",text_color(),1);
-    text(58,288,"READY STATE",sub_color(),1);
-    text(170,288,service_state(2),accent_color(),1);
-    text(58,310,"REQUIREMENT: USERSPACE + TUN/WIREGUARD + UDP",sub_color(),1);
-    fill_rect(42,356,(int)width-84,108,panel2_color());
-    text(58,374,"CURRENT NETWORK",accent_color(),1);
-    text(58,398,network_info_valid?(network_info.state==2?"NETWORK INITIALISED":network_info.state==1?"NETWORK STARTED":"NETWORK STOPPED"):"NETWORK INFO UNAVAILABLE",text_color(),1);
-    text(58,420,network_info_valid?(network_info.media_present?"LINK PRESENT":"NO LINK"):"UEFI SNP NOT FOUND",sub_color(),1);
-    text(58,442,"HTTP CLIENT: UEFI FIRMWARE BRIDGE",sub_color(),1);
-    fill_rect(42,(int)height-144,160,38,(service_flags&1)?accent_dark():panel2_color());text(62,(int)height-133,(service_flags&1)?"DISCORD ARMED":"ARM DISCORD",text_color(),1);
-    fill_rect(214,(int)height-144,170,38,(service_flags&2)?accent_dark():panel2_color());text(232,(int)height-133,(service_flags&2)?"TAILSCALE ARMED":"ARM TAILSCALE",text_color(),1);
-    text(42,(int)height-98,"ARMING A SERVICE STORES INTENT ONLY UNTIL ITS NATIVE RUNTIME EXISTS.",sub_color(),1);
+    text(42,116,"SERVER RUNTIME",accent_color(),1);
+    fill_rect(42,140,(int)width-84,120,panel_color());
+    text(58,156,"ALPINE SERVER MODE",text_color(),2);
+    text(58,184,"NODE.JS + PYTHON + TAILSCALE + SSH + LINUX NETWORKING",sub_color(),1);
+    text(58,206,"CONFIG: \\SteveOS\\Server\\server.conf",accent_color(),1);
+    text(58,228,"BOT SOURCE: \\SteveOS\\Server\\bot",sub_color(),1);
+    fill_rect(42,278,170,38,server_install_state==1?accent_dark():panel2_color());
+    text(60,289,server_install_state==1?"SERVER INSTALLED":"INSTALL SERVER",text_color(),1);
+    fill_rect(228,278,170,38,server_install_state==1?accent_color():panel2_color());
+    text(248,289,"BOOT SERVER MODE",text_color(),1);
+    if(server_install_state==2)text(42,330,"SERVER RUNTIME INSTALLED",good_color(),1);
+    else if(server_install_state==3)text(42,330,"SERVER INSTALL FAILED",danger_color(),1);
+    else text(42,330,"INSTALL IS NON-DESTRUCTIVE AND TARGET-SPECIFIC.",sub_color(),1);
+
+    text(42,370,"SERVICES",accent_color(),1);
+    fill_rect(42,390,(int)width-84,80,panel_color());
+    text(58,406,"DISCORD BOT",text_color(),1);text(170,406,(service_flags&1)?"AUTO-START":"OFF",accent_color(),1);
+    text(58,430,"TAILSCALE",text_color(),1);text(170,430,(service_flags&2)?"AUTO-START":"OFF",accent_color(),1);
+    text(58,454,"SSH",text_color(),1);text(170,454,(service_flags&4)?"AUTO-START":"OFF",accent_color(),1);
+
+    text(42,496,"NETWORK",accent_color(),1);
+    fill_rect(42,516,(int)width-84,96,panel2_color());
+    text(58,534,network_info_valid?(network_info.media_present?"LINK PRESENT":"NO LINK"):"NO NETWORK ADAPTER",text_color(),1);
+    text(58,556,network_info_valid?(network_info.mac_size>=6?"MAC AVAILABLE":"MAC UNKNOWN"):"UEFI SNP UNAVAILABLE",sub_color(),1);
+    text(58,578,boot_info->uefi_http_get?"DESKTOP HTTP BRIDGE AVAILABLE":"DESKTOP HTTP BRIDGE OFF",sub_color(),1);
+    text(42,(int)height-98,"SERVER MODE USES ALPINE LINUX FOR NATIVE TCP/IP/TLS/USERSPACE SERVICES.",sub_color(),1);
     taskbar();
 }
+
 static void draw_advanced(void){
     window_bar("ADVANCED SETTINGS","PERSISTENT SERVICE + DEBUG CONTROLS");
     text(42,116,"SERVER STARTUP",accent_color(),1);
@@ -1384,8 +1394,25 @@ static void app_click(uint32_t x,uint32_t y){
         if(hit(x,y,208,(int)height-136,150,38)&&app_package_pick>=0){app_install_selected();if(app_install_done==1)app_launch_selected();mark_dirty();return;}
     }
     else if(current_app==APP_SERVER){
-        if(hit(x,y,42,(int)height-144,160,38)){service_flags^=1;save_settings();mark_dirty();return;}
-        if(hit(x,y,214,(int)height-144,170,38)){service_flags^=2;save_settings();mark_dirty();return;}
+        if(hit(x,y,42,278,170,38)){
+            if(boot_info->uefi_install_server){
+                int pick=install_target_pick>=0?install_target_pick:0;
+                if(install_target_count==0)refresh_install_targets();
+                if(install_target_count>0){
+                    INSTALLSERVER fn=(INSTALLSERVER)(uintptr_t)boot_info->uefi_install_server;
+                    uint64_t st=fn((uint64_t)pick);server_install_state=(st==0)?2:3;
+                }else server_install_state=3;
+            }
+            mark_dirty();return;
+        }
+        if(hit(x,y,228,278,170,38)){
+            if(boot_info->uefi_launch_server&&server_install_state==2){
+                LAUNCHSERVER fn=(LAUNCHSERVER)(uintptr_t)boot_info->uefi_launch_server;
+                fn();
+            }
+            mark_dirty();return;
+        }
+        if(hit(x,y,42,390,(int)width-84,80)){service_flags^=7;save_settings();mark_dirty();return;}
     }
     else if(current_app==APP_ADVANCED){
         if(hit(x,y,42,136,(int)width-84,48)){service_flags^=1;save_settings();return;}
@@ -1519,7 +1546,12 @@ static void handle_scan(uint8_t s){
         }
         mark_dirty();return;
     }
-    if(current_app==APP_SERVER){if(s==2){service_flags^=1;save_settings();}else if(s==3){service_flags^=2;save_settings();}mark_dirty();return;}
+    if(current_app==APP_SERVER){
+        if(s==0x1C&&server_install_state==2&&boot_info->uefi_launch_server){LAUNCHSERVER fn=(LAUNCHSERVER)(uintptr_t)boot_info->uefi_launch_server;fn();return;}
+        if(s==2||s==3||s==4){service_flags^=1u<<(s-2);save_settings();}
+        else if(s==5){if(boot_info->uefi_install_server&&install_target_count){INSTALLSERVER fn=(INSTALLSERVER)(uintptr_t)boot_info->uefi_install_server;uint64_t st=fn((uint64_t)(install_target_pick>=0?install_target_pick:0));server_install_state=(st==0)?2:3;}}
+        mark_dirty();return;
+    }
     if(current_app==APP_ADVANCED){if(s==2)service_flags^=1;else if(s==3)service_flags^=2;else if(s==4)service_flags^=4;else if(s==5)logging_level^=1;else if(s==6)boot_delay=boot_delay>=10?0:boot_delay+1;save_settings();mark_dirty();return;}
     if(current_app==APP_FILES){
         if(s>=2&&s<=7){file_filter=(int)(s-2);file_scroll=0;selected_file=-1;}
