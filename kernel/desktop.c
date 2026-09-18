@@ -1207,7 +1207,7 @@ static void terminal_disks(void){
 }
 static void terminal_apps(void){
     scan_app_packages();
-    if(!app_package_count){terminal_add("NO EFI APP PACKAGES IN \\Apps");return;}
+    if(!app_package_count){terminal_add("NO APP PACKAGES IN \\Apps");return;}
     for(int i=0;i<app_package_count;i++){char name[80];file_name(&boot_files[app_package_indices[i]],name,sizeof(name));terminal_add(name);}
 }
 
