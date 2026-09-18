@@ -1322,7 +1322,7 @@ static void launch_app(int app){
     if(app==APP_BROWSER){browser_url[0]=0;browser_loaded=0;browser_scroll=0;browser_status=0;browser_raw[0]=0;browser_text[0]=0;browser_title[0]=0;browser_link_count=0;browser_history_count=0;browser_history_pos=0;browser_history_lock=0;browser_tab_count=1;browser_current_tab=0;browser_tabs[0][0]=0;}
     if(app==APP_INSTALLER)refresh_install_targets();
     if(app==APP_STORE){scan_app_packages();app_download_focus=1;app_download_url[0]=0;}
-    if(app==APP_SERVER||app==APP_ADVANCED)refresh_network_info();
+    if(app==APP_SERVER||app==APP_ADVANCED||app==APP_CONTROL)refresh_network_info();
     mark_dirty();
 }
 static void app_click(uint32_t x,uint32_t y){
@@ -1346,7 +1346,7 @@ static void app_click(uint32_t x,uint32_t y){
     }
     else if(current_app==APP_SETTINGS){if(hit(x,y,42,136,(int)width-84,54))light_theme^=1;else if(hit(x,y,42,202,(int)width-84,54)){pointer_scale=pointer_scale>=4?1:pointer_scale+1;native_pointer_set_scale(pointer_scale);}else if(hit(x,y,42,308,(int)width-84,54)){accent_id=(uint8_t)((accent_id+1)&3u);}mark_dirty();}
     else if(current_app==APP_CONTROL){
-        for(int i=0;i<8;i++){int col=i%2,row=i/2,rx=42+col*300,ry=114+row*76;if(hit(x,y,rx,ry,280,60)){const int targets[]={APP_SETTINGS,APP_SETTINGS,APP_BROWSER,APP_FILES,APP_TASKS,APP_SYSINFO,APP_FILES,APP_DEVICES};launch_app(targets[i]);return;}}
+        for(int i=0;i<9;i++){int col=i%2,row=i/2,rx=42+col*300,ry=114+row*76;if(hit(x,y,rx,ry,280,60)){const int targets[]={APP_SETTINGS,APP_SETTINGS,APP_BROWSER,APP_FILES,APP_TASKS,APP_SYSINFO,APP_FILES,APP_DEVICES,APP_SERVER};launch_app(targets[i]);return;}}
     }
     else if(current_app==APP_INSTALLER){
         int shown=install_target_count>8?8:(int)install_target_count;
