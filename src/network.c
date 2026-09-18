@@ -129,11 +129,12 @@ EFI_STATUS steveos_http_test(void) {
     return EFI_ERROR(st) ? st : EFI_SUCCESS;
 }
 
-EFI_STATUS steveos_http_get(const CHAR16 *url,
-                            CHAR8 *out,
-                            UINTN out_capacity,
-                            UINTN *out_length,
-                            UINT32 *http_status) {
+static EFI_STATUS steveos_http_get_internal(const CHAR16 *url,
+                                              CHAR8 *out,
+                                              UINTN out_capacity,
+                                              UINTN *out_length,
+                                              UINT32 *http_status,
+                                              UINTN redirects) {
     if (!url || !out || out_capacity < 2 || !out_length)
         return EFI_INVALID_PARAMETER;
 
@@ -141,6 +142,8 @@ EFI_STATUS steveos_http_get(const CHAR16 *url,
     out[0] = 0;
     if (http_status)
         *http_status = 0;
+    if (redirects > 4)
+        return EFI_ABORTED;
 
     STEVEOS_SERVICE_BINDING *binding = NULL;
     EFI_HANDLE child = NULL;
@@ -258,8 +261,54 @@ EFI_STATUS steveos_http_get(const CHAR16 *url,
         UINTN n = resp_msg.BodyLength;
         if (n >= out_capacity)
             n = out_capacity - 1;
+
+        if (resp_data.StatusCode >= 300 && resp_data.StatusCode < 400 &&
+            resp_msg.HeaderCount && resp_msg.Headers) {
+            CHAR16 redirect[1024];
+            UINTN redirect_len = 0;
+            BOOLEAN found = FALSE;
+            ZeroMem(redirect, sizeof(redirect));
+            for (UINTN h = 0; h < resp_msg.HeaderCount; ++h) {
+                CHAR8 *name = resp_msg.Headers[h].FieldName;
+                CHAR8 *value = resp_msg.Headers[h].FieldValue;
+                if (!name || !value)
+                    continue;
+                if ((name[0]=='L'||name[0]=='l') && (name[1]=='O'||name[1]=='o') &&
+                    (name[2]=='C'||name[2]=='c') && (name[3]=='A'||name[3]=='a') &&
+                    (name[4]=='T'||name[4]=='t') && (name[5]=='I'||name[5]=='i') &&
+                    (name[6]=='O'||name[6]=='o') && (name[7]=='N'||name[7]=='n') &&
+                    name[8]==0) {
+                    while (value[redirect_len] && redirect_len + 1 < 1024) {
+                        redirect[redirect_len] = (CHAR16)(UINT8)value[redirect_len];
+                        redirect_len++;
+                    }
+                    redirect[redirect_len] = 0;
+                    found = redirect_len > 0;
+                    break;
+                }
+            }
+
+            if (found) {
+                EFI_EVENT old_response_event = response_event;
+                EFI_EVENT old_request_event = request_event;
+                response_event = NULL;
+                request_event = NULL;
+                if (old_response_event)
+                    uefi_call_wrapper(BS->CloseEvent, 1, old_response_event);
+                if (old_request_event)
+                    uefi_call_wrapper(BS->CloseEvent, 1, old_request_event);
+                if (http)
+                    uefi_call_wrapper(http->Configure, 2, http, NULL);
+                if (binding && child)
+                    uefi_call_wrapper(binding->DestroyChild, 2, binding, child);
+                return steveos_http_get_internal(redirect, out, out_capacity,
+                                                  out_length, http_status,
+                                                  redirects + 1);
+            }
+
         out[n] = 0;
         *out_length = n;
+        }
     }
 
 cleanup:
@@ -272,4 +321,13 @@ cleanup:
     if (binding && child)
         uefi_call_wrapper(binding->DestroyChild, 2, binding, child);
     return st;
+}
+
+EFI_STATUS steveos_http_get(const CHAR16 *url,
+                            CHAR8 *out,
+                            UINTN out_capacity,
+                            UINTN *out_length,
+                            UINT32 *http_status) {
+    return steveos_http_get_internal(url, out, out_capacity,
+                                      out_length, http_status, 0);
 }
