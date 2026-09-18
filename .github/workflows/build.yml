@@ -30,7 +30,7 @@ jobs:
           cp build/BOOTX64.EFI usb/EFI/BOOT/BOOTX64.EFI
           cp build/apps/Hello.efi usb/Apps/Hello.efi
           cp build/server/ServerBoot.efi usb/SteveOS/Server/ServerBoot.efi
-          cp build/server/vmlinuz-virt usb/SteveOS/Server/vmlinuz-virt
+          cp build/server/vmlinuz-lts usb/SteveOS/Server/vmlinuz-lts
           cp build/server/server-initramfs.img usb/SteveOS/Server/server-initramfs.img
           cp build/server/rootfs/etc/steveos/server.conf usb/SteveOS/Server/server.conf
           truncate -s 512M steveOS.img
