@@ -597,7 +597,7 @@ EFI_STATUS steveos_run_windows_app(const CHAR16 *source_path){
 }
 
 
-#define STEVEOS_VERSION "1.1.0"
+#define STEVEOS_VERSION "1.2.0"
 #define STEVEOS_UPDATE_MAX (192ULL * 1024ULL * 1024ULL)
 
 static uint32_t steveos_version_value(const char *s) {
