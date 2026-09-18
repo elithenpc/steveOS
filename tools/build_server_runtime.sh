@@ -58,7 +58,7 @@ set -eu
 
 EXE=$1
 case "$EXE" in
-    *.exe|*.EXE) ;;
+    *.[eE][xX][eE]) ;;
     *) echo "not a Windows .exe: $EXE"; exit 2 ;;
 esac
 
