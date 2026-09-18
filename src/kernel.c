@@ -343,6 +343,38 @@ EFI_STATUS steveos_install_app(const CHAR16 *source_path){
     return st;
 }
 
+EFI_STATUS steveos_download_app(const CHAR16 *url,const CHAR16 *filename){
+    if(!url||!filename||!steveos_boot_device)return EFI_INVALID_PARAMETER;
+    CHAR8 *data=AllocatePool(1024*1024);
+    if(!data)return EFI_OUT_OF_RESOURCES;
+    UINTN len=0;UINT32 status=0;
+    EFI_STATUS st=steveos_http_get(url,data,1024*1024-1,&len,&status);
+    if(EFI_ERROR(st)||status<200||status>=300||len<4){FreePool(data);return EFI_ABORTED;}
+    EFI_FILE_PROTOCOL *root=NULL,*apps=NULL,*file=NULL;
+    st=steveos_fs_open_volume(steveos_boot_device,&root);
+    if(!EFI_ERROR(st))st=uefi_call_wrapper(root->Open,5,root,&apps,L"\\SteveOS\\Apps",EFI_FILE_MODE_READ|EFI_FILE_MODE_WRITE|EFI_FILE_MODE_CREATE,EFI_FILE_DIRECTORY);
+    if(!EFI_ERROR(st))st=uefi_call_wrapper(apps->Open,5,apps,&file,(CHAR16*)filename,EFI_FILE_MODE_READ|EFI_FILE_MODE_WRITE|EFI_FILE_MODE_CREATE,0);
+    if(!EFI_ERROR(st)){
+        UINTN info_size=0;EFI_FILE_INFO *info=NULL;
+        if(uefi_call_wrapper(file->GetInfo,4,file,&gEfiFileInfoGuid,&info_size,NULL)==EFI_BUFFER_TOO_SMALL){
+            info=AllocatePool(info_size);
+            if(info&&!EFI_ERROR(uefi_call_wrapper(file->GetInfo,4,file,&gEfiFileInfoGuid,&info_size,info))){
+                info->FileSize=0;info->PhysicalSize=0;
+                uefi_call_wrapper(file->SetInfo,4,file,&gEfiFileInfoGuid,info_size,info);
+            }
+            if(info)FreePool(info);
+        }
+        uefi_call_wrapper(file->SetPosition,2,file,0);
+        UINTN wr=len;st=uefi_call_wrapper(file->Write,3,file,&wr,data);
+        if(!EFI_ERROR(st)&&wr!=len)st=EFI_DEVICE_ERROR;
+        uefi_call_wrapper(file->Close,1,file);
+    }
+    if(apps)uefi_call_wrapper(apps->Close,1,apps);
+    if(root)uefi_call_wrapper(root->Close,1,root);
+    FreePool(data);
+    return st;
+}
+
 EFI_STATUS steveos_launch_app(const CHAR16 *path){
     if(!path||!steveos_boot_device||!steveos_image_handle)return EFI_INVALID_PARAMETER;
     EFI_DEVICE_PATH *dp=FileDevicePath(steveos_boot_device,(CHAR16*)path);
@@ -449,6 +481,7 @@ EFI_STATUS steveos_kernel_boot(EFI_HANDLE image_handle,
     boot->uefi_list_install_targets = (UINT64)(UINTN)steveos_list_install_targets;
     boot->uefi_install_self = (UINT64)(UINTN)steveos_install_self;
     boot->uefi_install_app = (UINT64)(UINTN)steveos_install_app;
+    boot->uefi_download_app = (UINT64)(UINTN)steveos_download_app;
     boot->uefi_launch_app = (UINT64)(UINTN)steveos_launch_app;
     boot->uefi_network_info = (UINT64)(UINTN)steveos_network_info;
     boot->backbuffer_base = backbuffer_addr;
