@@ -31,9 +31,19 @@ The intended path is:
 5. Persistent Tailscale state
 6. Service supervision and automatic startup
 
+## Windows EXE compatibility
+
+Server Mode includes Wine and Xvfb. Windows `.EXE` files placed under `\\SteveOS\\Apps` can be launched from the native App Store or with the native terminal command `RUNEXE NAME.EXE`.
+
+The native desktop hands the selected executable to Server Mode, which runs it through Wine. x86_64 Alpine documents Wine support including WoW64 for many 32-bit applications, but application compatibility and required Windows dependencies vary.
+
+GUI EXEs currently start inside Xvfb. They are therefore executable in the server environment, but their windows are not yet embedded into the native SteveOS desktop. A future display bridge can provide local or remote interactive Windows application windows.
+
+Once Server Mode is open, the Linux shell also provides `runexe /efi/SteveOS/Apps/program.exe` for manually launching an executable.
+
 ## Current service manager
 
-The native Server Manager stores explicit startup intent for Discord and Tailscale and reports the current firmware network state. These flags do not claim that either service is currently executable.
+The native Server Manager stores explicit startup intent for Discord and Tailscale and reports the current firmware network state. Windows EXE execution is handled by the installed Server Mode runtime.
 
 ## Internet access today
 
