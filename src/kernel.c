@@ -273,11 +273,49 @@ UINT64 steveos_list_install_targets(STEVEOS_INSTALL_TARGET *out,UINT64 capacity)
     return (UINT64)count;
 }
 
+static EFI_STATUS steveos_register_boot_option(EFI_HANDLE target){
+    if(!target)return EFI_INVALID_PARAMETER;
+    EFI_DEVICE_PATH *dp=FileDevicePath(target,L"\\EFI\\BOOT\\BOOTX64.EFI");
+    if(!dp)return EFI_OUT_OF_RESOURCES;
+    UINTN dpsz=DevicePathSize(dp);
+    UINTN slot=0;
+    CHAR16 name[16];
+    UINT32 attrs=0;UINTN sz=0;UINT8 probe[4];
+    for(UINTN n=0;n<0x10000;n++){
+        SPrint(name,sizeof(name),L"Boot%04x",(UINT16)n);
+        sz=sizeof(probe);
+        EFI_STATUS gst=uefi_call_wrapper(RT->GetVariable,5,name,&EfiGlobalVariable,&attrs,&sz,probe);
+        if(gst==EFI_NOT_FOUND){slot=n;break;}
+        if(n==0xFFFF){FreePool(dp);return EFI_OUT_OF_RESOURCES;}
+    }
+    CHAR16 desc[]=L"SteveOS";
+    UINTN desc_bytes=sizeof(desc);
+    UINTN option_size=sizeof(UINT32)+sizeof(UINT16)+desc_bytes+dpsz;
+    UINT8 *option=AllocatePool(option_size);
+    if(!option){FreePool(dp);return EFI_OUT_OF_RESOURCES;}
+    ZeroMem(option,option_size);
+    *(UINT32*)option=LOAD_OPTION_ACTIVE;
+    *(UINT16*)(option+sizeof(UINT32))=(UINT16)dpsz;
+    CopyMem(option+sizeof(UINT32)+sizeof(UINT16),desc,desc_bytes);
+    CopyMem(option+sizeof(UINT32)+sizeof(UINT16)+desc_bytes,dp,dpsz);
+    SPrint(name,sizeof(name),L"Boot%04x",(UINT16)slot);
+    EFI_STATUS st=uefi_call_wrapper(RT->SetVariable,5,name,&EfiGlobalVariable,7,option_size,option);
+    if(!EFI_ERROR(st)){
+        CHAR16 order_name[]=L"BootOrder";UINT16 order[256];UINTN order_size=sizeof(order);UINT32 order_attr=0;
+        EFI_STATUS gst=uefi_call_wrapper(RT->GetVariable,5,order_name,&EfiGlobalVariable,&order_attr,&order_size,order);
+        UINTN count=(gst==EFI_BUFFER_TOO_SMALL||EFI_ERROR(gst))?0:order_size/sizeof(UINT16);
+        if(count>255)count=255;
+        int already=0;
+        for(UINTN i=0;i<count;i++)if(order[i]==(UINT16)slot)already=1;
+        if(!already){order[count++]=(UINT16)slot;st=uefi_call_wrapper(RT->SetVariable,5,order_name,&EfiGlobalVariable,7,count*sizeof(UINT16),order);}
+    }
+    FreePool(option);FreePool(dp);
+    return st;
+}
+
 EFI_STATUS steveos_install_self(UINT64 target_index){
     STEVEOS_TARGET_INTERNAL tmp[32];UINTN count=0;
     if(EFI_ERROR(steveos_target_handles(tmp,32,&count))||target_index>=count)return EFI_NOT_FOUND;
-    VOID *data=(VOID*)_binary_build_native_kernel_raw_start;
-    (void)data;
     EFI_FILE_PROTOCOL *src=NULL,*root=NULL,*ed=NULL,*bd=NULL,*f=NULL;
     EFI_STATUS st=steveos_fs_open_volume(steveos_boot_device,&src);
     if(EFI_ERROR(st))return st;
@@ -290,12 +328,10 @@ EFI_STATUS steveos_install_self(UINT64 target_index){
     if(!EFI_ERROR(st))st=uefi_call_wrapper(ed->Open,5,ed,&bd,L"BOOT",EFI_FILE_MODE_READ|EFI_FILE_MODE_WRITE|EFI_FILE_MODE_CREATE,EFI_FILE_DIRECTORY);
     if(!EFI_ERROR(st))st=uefi_call_wrapper(bd->Open,5,bd,&f,L"BOOTX64.EFI",EFI_FILE_MODE_READ|EFI_FILE_MODE_WRITE|EFI_FILE_MODE_CREATE,0);
     if(!EFI_ERROR(st)&&f){
-        UINT64 new_size=0;
-        EFI_FILE_INFO *info=NULL;
-        UINTN info_sz=0;
+        EFI_FILE_INFO *info=NULL;UINTN info_sz=0;
         if(uefi_call_wrapper(f->GetInfo,4,f,&gEfiFileInfoGuid,&info_sz,NULL)==EFI_BUFFER_TOO_SMALL){
             info=AllocatePool(info_sz);
-            if(info&& !EFI_ERROR(uefi_call_wrapper(f->GetInfo,4,f,&gEfiFileInfoGuid,&info_sz,info))){
+            if(info&&!EFI_ERROR(uefi_call_wrapper(f->GetInfo,4,f,&gEfiFileInfoGuid,&info_sz,info))){
                 info->FileSize=0;info->PhysicalSize=0;
                 uefi_call_wrapper(f->SetInfo,4,f,&gEfiFileInfoGuid,info_sz,info);
             }
@@ -303,13 +339,13 @@ EFI_STATUS steveos_install_self(UINT64 target_index){
         }
         st=uefi_call_wrapper(f->SetPosition,2,f,0);
         if(!EFI_ERROR(st)){UINTN wr=efi_size;st=uefi_call_wrapper(f->Write,3,f,&wr,efi_image);if(!EFI_ERROR(st)&&wr!=efi_size)st=EFI_DEVICE_ERROR;}
-        (void)new_size;
-        uefi_call_wrapper(f->Close,1,f);
+        uefi_call_wrapper(f->Close,1,f);f=NULL;
     }
     if(bd)uefi_call_wrapper(bd->Close,1,bd);
     if(ed)uefi_call_wrapper(ed->Close,1,ed);
     if(root)uefi_call_wrapper(root->Close,1,root);
     FreePool(efi_image);
+    if(!EFI_ERROR(st))st=steveos_register_boot_option(tmp[target_index].handle);
     return st;
 }
 
