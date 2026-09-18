@@ -56,6 +56,8 @@ typedef struct {
     uint64_t uefi_write_text;
     uint64_t uefi_list_install_targets;
     uint64_t uefi_install_self;
+    uint64_t uefi_install_server;
+    uint64_t uefi_launch_server;
     uint64_t uefi_install_app;
     uint64_t uefi_download_app;
     uint64_t uefi_launch_app;
