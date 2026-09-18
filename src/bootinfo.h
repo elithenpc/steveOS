@@ -34,6 +34,14 @@ typedef struct {
 } STEVEOS_NETWORK_INFO;
 
 typedef struct {
+    char current_version[24];
+    char remote_version[24];
+    uint32_t available;
+    uint32_t state;
+    uint64_t bytes_ready;
+} STEVEOS_UPDATE_INFO;
+
+typedef struct {
     uint64_t magic;
     uint64_t framebuffer_base;
     uint64_t framebuffer_size;
@@ -63,6 +71,8 @@ typedef struct {
     uint64_t uefi_launch_app;
     uint64_t uefi_install_windows_app;
     uint64_t uefi_run_windows_app;
+    uint64_t uefi_update_check;
+    uint64_t uefi_update_apply;
     uint64_t uefi_network_info;
     uint64_t boot_files;
     uint64_t boot_file_count;
