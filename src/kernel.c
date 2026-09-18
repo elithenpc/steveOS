@@ -109,7 +109,6 @@ static UINT32 file_kind(const CHAR16 *name) {
         has_ext(name, L".jpg") || has_ext(name, L".jpeg") ||
         has_ext(name, L".ppm")) return 1;
     if (has_ext(name, L".exe")) return 4;
-    if (has_ext(name, L".exe")) return 4;
     if (has_ext(name, L".txt") || has_ext(name, L".md") ||
         has_ext(name, L".log") || has_ext(name, L".html") || has_ext(name, L".htm") ||
         has_ext(name, L".css") || has_ext(name, L".json") || has_ext(name, L".xml") ||
