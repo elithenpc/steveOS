@@ -401,10 +401,18 @@ static const CHAR16*steveos_basename(const CHAR16*path){
     return last;
 }
 
+static BOOLEAN steveos_is_efi_name(const CHAR16 *name){
+    if(!name)return FALSE;
+    UINTN n=0;while(name[n])n++;
+    return n>=4&&name[n-4]==L'.'&&
+           (name[n-3]==L'e'||name[n-3]==L'E')&&
+           (name[n-2]==L'f'||name[n-2]==L'F')&&
+           (name[n-1]==L'i'||name[n-1]==L'I');
+}
 EFI_STATUS steveos_install_app(const CHAR16 *source_path){
     if(!source_path||!steveos_boot_device)return EFI_INVALID_PARAMETER;
     const CHAR16*name=steveos_basename(source_path);
-    if(!name||!name[0])return EFI_INVALID_PARAMETER;
+    if(!name||!name[0]||!steveos_is_efi_name(name))return EFI_INVALID_PARAMETER;
     EFI_FILE_PROTOCOL *root=NULL,*apps=NULL,*src=NULL,*dst=NULL;EFI_STATUS st;
     st=steveos_fs_open_volume(steveos_boot_device,&root);if(EFI_ERROR(st))return st;
     st=uefi_call_wrapper(root->Open,5,root,&src,source_path,EFI_FILE_MODE_READ,0);
@@ -427,7 +435,7 @@ EFI_STATUS steveos_install_app(const CHAR16 *source_path){
 }
 
 EFI_STATUS steveos_download_app(const CHAR16 *url,const CHAR16 *filename){
-    if(!url||!filename||!steveos_boot_device)return EFI_INVALID_PARAMETER;
+    if(!url||!filename||!steveos_boot_device||!steveos_is_efi_name(filename))return EFI_INVALID_PARAMETER;
     CHAR8 *data=AllocatePool(1024*1024);
     if(!data)return EFI_OUT_OF_RESOURCES;
     UINTN len=0;UINT32 status=0;
