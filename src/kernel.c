@@ -415,10 +415,12 @@ EFI_STATUS steveos_install_app(const CHAR16 *source_path){
     VOID*buf=AllocatePool(size?size:1);if(!buf){uefi_call_wrapper(src->Close,1,src);uefi_call_wrapper(root->Close,1,root);return EFI_OUT_OF_RESOURCES;}
     UINTN read=size;st=uefi_call_wrapper(src->Read,3,src,&read,buf);uefi_call_wrapper(src->Close,1,src);
     if(EFI_ERROR(st)||read!=size){FreePool(buf);uefi_call_wrapper(root->Close,1,root);return EFI_DEVICE_ERROR;}
-    st=uefi_call_wrapper(root->Open,5,root,&apps,L"\\SteveOS\\Apps",EFI_FILE_MODE_READ|EFI_FILE_MODE_WRITE|EFI_FILE_MODE_CREATE,EFI_FILE_DIRECTORY);
+    EFI_FILE_PROTOCOL *steveos_dir=NULL;
+    st=uefi_call_wrapper(root->Open,5,root,&steveos_dir,L"SteveOS",EFI_FILE_MODE_READ|EFI_FILE_MODE_WRITE|EFI_FILE_MODE_CREATE,EFI_FILE_DIRECTORY);
+    if(!EFI_ERROR(st))st=uefi_call_wrapper(steveos_dir->Open,5,steveos_dir,&apps,L"Apps",EFI_FILE_MODE_READ|EFI_FILE_MODE_WRITE|EFI_FILE_MODE_CREATE,EFI_FILE_DIRECTORY);
     if(!EFI_ERROR(st))st=uefi_call_wrapper(apps->Open,5,apps,&dst,(CHAR16*)name,EFI_FILE_MODE_READ|EFI_FILE_MODE_WRITE|EFI_FILE_MODE_CREATE,0);
     if(!EFI_ERROR(st)){UINTN wr=size;uefi_call_wrapper(dst->SetPosition,2,dst,0);st=uefi_call_wrapper(dst->Write,3,dst,&wr,buf);if(!EFI_ERROR(st)&&wr!=size)st=EFI_DEVICE_ERROR;}
-    if(dst)uefi_call_wrapper(dst->Close,1,dst);if(apps)uefi_call_wrapper(apps->Close,1,apps);uefi_call_wrapper(root->Close,1,root);FreePool(buf);
+    if(dst)uefi_call_wrapper(dst->Close,1,dst);if(apps)uefi_call_wrapper(apps->Close,1,apps);if(steveos_dir)uefi_call_wrapper(steveos_dir->Close,1,steveos_dir);uefi_call_wrapper(root->Close,1,root);FreePool(buf);
     return st;
 }
 
@@ -431,7 +433,9 @@ EFI_STATUS steveos_download_app(const CHAR16 *url,const CHAR16 *filename){
     if(EFI_ERROR(st)||status<200||status>=300||len<4){FreePool(data);return EFI_ABORTED;}
     EFI_FILE_PROTOCOL *root=NULL,*apps=NULL,*file=NULL;
     st=steveos_fs_open_volume(steveos_boot_device,&root);
-    if(!EFI_ERROR(st))st=uefi_call_wrapper(root->Open,5,root,&apps,L"\\SteveOS\\Apps",EFI_FILE_MODE_READ|EFI_FILE_MODE_WRITE|EFI_FILE_MODE_CREATE,EFI_FILE_DIRECTORY);
+    EFI_FILE_PROTOCOL *steveos_dir=NULL;
+    if(!EFI_ERROR(st))st=uefi_call_wrapper(root->Open,5,root,&steveos_dir,L"SteveOS",EFI_FILE_MODE_READ|EFI_FILE_MODE_WRITE|EFI_FILE_MODE_CREATE,EFI_FILE_DIRECTORY);
+    if(!EFI_ERROR(st))st=uefi_call_wrapper(steveos_dir->Open,5,steveos_dir,&apps,L"Apps",EFI_FILE_MODE_READ|EFI_FILE_MODE_WRITE|EFI_FILE_MODE_CREATE,EFI_FILE_DIRECTORY);
     if(!EFI_ERROR(st))st=uefi_call_wrapper(apps->Open,5,apps,&file,(CHAR16*)filename,EFI_FILE_MODE_READ|EFI_FILE_MODE_WRITE|EFI_FILE_MODE_CREATE,0);
     if(!EFI_ERROR(st)){
         UINTN info_size=0;EFI_FILE_INFO *info=NULL;
@@ -449,6 +453,7 @@ EFI_STATUS steveos_download_app(const CHAR16 *url,const CHAR16 *filename){
         uefi_call_wrapper(file->Close,1,file);
     }
     if(apps)uefi_call_wrapper(apps->Close,1,apps);
+    if(steveos_dir)uefi_call_wrapper(steveos_dir->Close,1,steveos_dir);
     if(root)uefi_call_wrapper(root->Close,1,root);
     FreePool(data);
     return st;
