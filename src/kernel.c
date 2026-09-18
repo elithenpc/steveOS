@@ -4,11 +4,16 @@
 #include "kernel.h"
 #include "bootinfo.h"
 #include "network.h"
+#include "fs.h"
 
 extern const unsigned char _binary_build_native_kernel_raw_start[];
 extern const unsigned char _binary_build_native_kernel_raw_end[];
 static EFI_HANDLE steveos_boot_device;
 static EFI_HANDLE steveos_image_handle;
+static EFI_STATUS steveos_install_self(UINT64 target_index);
+static EFI_STATUS steveos_install_server(UINT64 target_index);
+static EFI_STATUS steveos_launch_app(const CHAR16 *path);
+
 typedef void (*STEVEOS_NATIVE_ENTRY)(STEVEOS_BOOT_INFO *boot, void *stack_top);
 #define STEVEOS_KERNEL_LOAD_ADDRESS 0x00200000ULL
 #define STEVEOS_IMAGE_LOAD_LIMIT (2ULL * 1024ULL * 1024ULL)
@@ -382,7 +387,7 @@ static EFI_STATUS steveos_register_named_boot_option(EFI_HANDLE target,const CHA
     }
     FreePool(option);FreePool(dp);return st;
 }
-EFI_STATUS steveos_install_server(UINT64 target_index){
+static EFI_STATUS steveos_install_server(UINT64 target_index){
     STEVEOS_TARGET_INTERNAL tmp[32];UINTN count=0;
     if(EFI_ERROR(steveos_target_handles(tmp,32,&count))||target_index>=count)return EFI_NOT_FOUND;
     EFI_STATUS st=steveos_install_server_files(tmp[target_index].handle);
@@ -469,7 +474,7 @@ EFI_STATUS steveos_download_app(const CHAR16 *url,const CHAR16 *filename){
     return st;
 }
 
-EFI_STATUS steveos_launch_app(const CHAR16 *path){
+static EFI_STATUS steveos_launch_app(const CHAR16 *path){
     if(!path||!steveos_boot_device||!steveos_image_handle)return EFI_INVALID_PARAMETER;
     EFI_DEVICE_PATH *dp=FileDevicePath(steveos_boot_device,(CHAR16*)path);
     if(!dp)return EFI_OUT_OF_RESOURCES;
