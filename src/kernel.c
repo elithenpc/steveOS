@@ -14,8 +14,8 @@ static EFI_STATUS steveos_install_self(UINT64 target_index);
 static EFI_STATUS steveos_install_server(UINT64 target_index);
 static EFI_STATUS steveos_launch_app(const CHAR16 *path);
 EFI_STATUS steveos_write_boot_text(const CHAR16 *path,const void *data,UINTN size);
-static EFI_STATUS steveos_install_windows_app(const CHAR16 *source_path);
-static EFI_STATUS steveos_run_windows_app(const CHAR16 *source_path);
+EFI_STATUS steveos_install_windows_app(const CHAR16 *source_path);
+EFI_STATUS steveos_run_windows_app(const CHAR16 *source_path);
 
 typedef void (*STEVEOS_NATIVE_ENTRY)(STEVEOS_BOOT_INFO *boot, void *stack_top);
 #define STEVEOS_KERNEL_LOAD_ADDRESS 0x00200000ULL
@@ -108,6 +108,7 @@ static UINT32 file_kind(const CHAR16 *name) {
     if (has_ext(name, L".bmp") || has_ext(name, L".png") ||
         has_ext(name, L".jpg") || has_ext(name, L".jpeg") ||
         has_ext(name, L".ppm")) return 1;
+    if (has_ext(name, L".exe")) return 4;
     if (has_ext(name, L".txt") || has_ext(name, L".md") ||
         has_ext(name, L".log") || has_ext(name, L".html") || has_ext(name, L".htm") ||
         has_ext(name, L".css") || has_ext(name, L".json") || has_ext(name, L".xml") ||
