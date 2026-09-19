@@ -70,6 +70,8 @@ def main():
         1)
     text = text.replace('for(int i=0;i<17;i++)if(contains_ci(menu_names[i],menu_search))',
                         'for(int i=0;i<18;i++)if(contains_ci(menu_names[i],menu_search))', 1)
+    text = text.replace('for(int i=0;i<17;i++)if(contains_ci(menu_names[i],menu_search))',
+                        'for(int i=0;i<18;i++)if(contains_ci(menu_names[i],menu_search))', 1)
     text = text.replace(
         'const int ap[]={APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_IMAGE,APP_SETTINGS,APP_TASKS,APP_TERMINAL,APP_CALENDAR,APP_CONTROL,APP_ABOUT,APP_SYSINFO,APP_DEVICES,APP_INSTALLER,APP_STORE,APP_SERVER,APP_ADVANCED};',
         'const int ap[]={APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_IMAGE,APP_SETTINGS,APP_TASKS,APP_TERMINAL,APP_CALENDAR,APP_CONTROL,APP_ABOUT,APP_SYSINFO,APP_DEVICES,APP_INSTALLER,APP_STORE,APP_SERVER,APP_ADVANCED,APP_COMPAT};',
