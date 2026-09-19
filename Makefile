@@ -68,7 +68,7 @@ build/shell.o: src/shell3.c src/shell.h src/memory.h src/storage.h src/network.h
 	mkdir -p build
 	$(CC) $(CFLAGS) -c src/shell3.c -o $@
 
-build/bootlog.o: src/bootlog.c src/bootlog.h src/memory.h src/storage.h src/network.h src/tasks.h
+build/bootlog.o: src/bootlog.c src/bootlog.h src/memory.h src/storage.h src/network.h src.tasks.h
 	mkdir -p build
 	$(CC) $(CFLAGS) -c src/bootlog.c -o $@
 
@@ -92,9 +92,10 @@ build/installer.o: src/installer.c src/installer.h src/fs.h
 	mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 
-build/kernel.o: src/kernel.c src/kernel.h src/bootinfo.h
+build/kernel.o: src/kernel.c src/kernel.h src/bootinfo.h VERSION tools/prepare_kernel.py
 	mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o $@
+	python3 tools/prepare_kernel.py
+	$(CC) $(CFLAGS) -c src/kernel.c -o $@
 
 build/interrupts.o: src/interrupts.c src/interrupts.h
 	mkdir -p build
