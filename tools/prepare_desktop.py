@@ -151,12 +151,14 @@ static void draw_compat(void){
                     fn(f->name);
                 }else compat_request_run(f);
             }else if(f->kind==2&&f->data){"""
-    if(!text.includes(old_open)) throw new Error("terminal OPEN compatibility anchor missing");
+    if old_open not in text:
+        raise RuntimeError("terminal OPEN compatibility anchor missing")
     text=text.replace(old_open,new_open,1)
 
     old_files = r"""else if(f->kind==4&&boot_info->uefi_run_windows_app){RUNWINDOWSAPP fn=(RUNWINDOWSAPP)(uintptr_t)boot_info->uefi_run_windows_app;fn(f->name);}else if(f->kind==2&&f->data){"""
     new_files = r"""else if(f->kind==4&&boot_info->uefi_run_windows_app){RUNWINDOWSAPP fn=(RUNWINDOWSAPP)(uintptr_t)boot_info->uefi_run_windows_app;fn(f->name);}else if(f->kind==4){compat_request_run(f);}else if(f->kind==2&&f->data){"""
-    if(!text.includes(old_files)) throw new Error("file manager compatibility anchor missing");
+    if old_files not in text:
+        raise RuntimeError("file manager compatibility anchor missing")
     text=text.replace(old_files,new_files,1)
     text=text.replace(
         'if(hit(x,y,bx,by,cw,ch)){launch_app((int[]){APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_IMAGE,APP_SETTINGS,APP_TASKS,APP_TERMINAL,APP_CALENDAR,APP_CONTROL,APP_ABOUT,APP_SYSINFO,APP_DEVICES,APP_INSTALLER,APP_STORE,APP_SERVER,APP_ADVANCED}[i]);return;}}}',
