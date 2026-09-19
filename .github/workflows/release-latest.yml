@@ -1,0 +1,55 @@
+name: Publish steveOS latest update
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out steveOS
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install UEFI build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc binutils gnu-efi python3 python3-pil mtools dosfstools cpio gzip grub-efi-amd64-bin grub-common curl proot
+
+      - name: Build Server Mode runtime
+        run: sh tools/build_server_runtime.sh
+
+      - name: Build BOOTX64.EFI
+        run: make
+
+      - name: Assemble update bundle
+        run: |
+          mkdir -p release/EFI/BOOT release/SteveOS/Server
+          cp build/BOOTX64.EFI release/EFI/BOOT/BOOTX64.EFI
+          cp build/server/ServerBoot.efi release/SteveOS/Server/ServerBoot.efi
+          cp build/server/vmlinuz-lts release/SteveOS/Server/vmlinuz-lts
+          cp build/server/server-initramfs.img release/SteveOS/Server/server-initramfs.img
+          cp build/server/rootfs/etc/steveos/server.conf release/SteveOS/Server/server.conf
+
+      - name: Publish rolling latest release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: steveOS latest
+          body: |
+            Rolling update channel for steveOS.
+            The VERSION file on main is used by the native desktop to detect a newer release.
+          prerelease: false
+          make_latest: true
+          files: |
+            release/EFI/BOOT/BOOTX64.EFI
+            release/SteveOS/Server/ServerBoot.efi
+            release/SteveOS/Server/vmlinuz-lts
+            release/SteveOS/Server/server-initramfs.img
+            release/SteveOS/Server/server.conf
