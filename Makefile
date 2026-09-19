@@ -7,7 +7,8 @@ GNU_EFI_LIBDIR := $(if $(GNU_EFI_LIBDIR),$(GNU_EFI_LIBDIR),/usr/lib)
 
 CFLAGS := -I/usr/include/efi -I/usr/include/efi/x86_64 \
           -fpic -ffreestanding -fno-stack-protector -fno-stack-check \
-          -fshort-wchar -mno-red-zone -maccumulate-outgoing-args \
+          -fshort-wchar -mno-red-zone -maccumulate-outgoing-args
+
 KERNEL_CFLAGS := -O2 -ffreestanding -fno-stack-protector -fno-stack-check -fno-pie -fno-pic \
                  -mno-red-zone -mcmodel=small -Wall -Wextra -I.
 LDFLAGS := -nostdlib -znocombreloc -T $(GNU_EFI_LIBDIR)/elf_x86_64_efi.lds \
