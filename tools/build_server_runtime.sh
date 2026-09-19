@@ -91,13 +91,14 @@ case "$APP" in
         if command -v darling >/dev/null 2>&1; then
             case "$APP" in
                 *.app|*.APP)
-                    exec darling "$APP"
+                    DAPP="/Volumes/SystemRoot$APP"
+                    exec darling shell sh -c 'app="$1"; exe=$(find "$app/Contents/MacOS" -type f | head -n1); [ -n "$exe" ] || exit 127; exec "$exe"' sh "$DAPP"
                     ;;
                 *.dmg|*.DMG)
-                    exec darling shell hdiutil attach "$APP"
+                    exec darling shell hdiutil attach "/Volumes/SystemRoot$APP"
                     ;;
                 *.pkg|*.PKG)
-                    exec darling shell installer -pkg "$APP" -target /
+                    exec darling shell installer -pkg "/Volumes/SystemRoot$APP" -target /
                     ;;
             esac
         fi
