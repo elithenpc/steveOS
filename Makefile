@@ -128,9 +128,10 @@ build/native-kernel-main.o: kernel/main.c kernel/desktop.h src/bootinfo.h build/
 	mkdir -p build
 	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
 
-build/native-kernel-desktop.o: kernel/desktop.c kernel/desktop.h src/bootinfo.h build/mint_icons.raw.o
+build/native-kernel-desktop.o: kernel/desktop.c kernel/desktop.h src/bootinfo.h build/mint_icons.raw.o tools/prepare_desktop.py
 	mkdir -p build
-	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
+	python3 tools/prepare_desktop.py
+	$(CC) $(KERNEL_CFLAGS) -c kernel/desktop.c -o $@
 
 build/native_kernel.elf: build/native-kernel-entry.o build/native-kernel-main.o build/native-kernel-desktop.o build/native-kernel-arch.o build/native-kernel-usb.o build/native-kernel-i2c.o build/native-kernel-input.o build/boot.raw.o build/mint_icons.raw.o
 	$(LD) -T kernel/linker.ld -o $@ $^
