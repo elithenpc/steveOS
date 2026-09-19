@@ -57,3 +57,18 @@ Windows EXE files can be placed in the Apps directory and launched through Serve
 \n## Multimedia and hardware compatibility\n\nThe Server Mode image now uses Alpine Linux 3.24.2 and the LTS kernel rather than the minimal virtual kernel. It includes FFmpeg, GStreamer base/good/bad/ugly plugins, ALSA, PipeWire, V4L2 utilities, Intel firmware and common Linux hardware tools. The init script attempts common network, graphics, camera, audio, storage and Bluetooth modules. Host device nodes are exposed to the runtime, so camera devices can appear as /dev/video* and audio devices as /dev/snd.
 \nThese are Linux compatibility facilities. Native SteveOS still needs dedicated kernel drivers and device APIs before cameras, microphones, hardware-accelerated multimedia and Windows compatibility are first-class native desktop features.
 \n## Automatic updates\n\nGitHub Actions publishes a rolling latest release containing the native EFI loader, Server Mode bootloader, LTS kernel, initramfs and full USB image. The native Update Centre checks the repository VERSION file and downloads the release assets through the firmware HTTP client.
+
+
+## Cross-platform application runtime
+
+Server Mode now provides an application dispatcher for Linux ELF binaries, AppImages, scripts, Windows EXE/COM files, Flatpak bundles, and macOS application formats. Linux programs execute in the Alpine Linux userspace; Windows programs are routed through Wine with Xvfb; Flatpak is configured for Flathub. macOS APP/DMG/PKG files are routed through Darling when Darling is installed. Darling is a Linux compatibility layer for macOS software, and its GUI support is still experimental, so macOS application compatibility is not universal.
+
+The native Compatibility Hub can hand an application selected in File Manager to Server Mode and can open Flathub in the native browser. The native UEFI kernel does not directly execute ELF, PE, Mach-O or Flatpak payloads. Server Mode supplies the userspace compatibility layer.
+
+## Flatpak Store
+
+The App Store/Compatibility Hub path uses Flathub as the Flatpak catalogue. Flatpak is configured with the Flathub remote inside Server Mode. Flatpak applications retain Flatpak's sandbox model and can be installed per-user or system-wide.
+
+## Linux Mint visual assets
+
+The native desktop continues to use bundled Mint-Y icons for its application and system UI. The Mint-Y icon theme remains a third-party asset rather than being copied into the SteveOS kernel source.
