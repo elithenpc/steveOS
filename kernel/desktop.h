@@ -2,6 +2,9 @@
 #define STEVEOS_DESKTOP_H
 #include "../src/bootinfo.h"
 
+/* Internal helper is defined in desktop.c; mark the declaration unused for other translation units. */
+static int terminal_file_match(const char *a, const char *b) __attribute__((unused));
+
 void steveos_desktop_init(STEVEOS_BOOT_INFO *boot);
 void steveos_desktop_run(STEVEOS_BOOT_INFO *boot);
 #endif
