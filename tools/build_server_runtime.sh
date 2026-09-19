@@ -24,21 +24,21 @@ cp /etc/resolv.conf $ROOT/etc/resolv.conf || true
 proot -R $ROOT -b /proc:/proc -b /sys:/sys -b /dev:/dev /sbin/apk add --no-cache \
   bash coreutils findutils grep sed gawk util-linux pciutils usbutils procps \
   ca-certificates curl wget git openssh-server \
-  iproute2 iptables kmod \
+  iproute2 iptables kmod dbus dbus-x11 \
   nodejs npm python3 py3-pip py3-virtualenv \
   tailscale wpa_supplicant \
   ffmpeg gstreamer gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugins-ugly \
   alsa-utils pipewire pipewire-pulse pipewire-alsa v4l-utils \
   mesa-dri-gallium mesa-gl mesa-egl fontconfig ttf-dejavu xvfb-run \
-  linux-lts linux-firmware-intel
+  linux-lts linux-firmware-intel gcompat
 
 # Wine is currently packaged for Alpine edge x86_64; keep it isolated inside Server Mode.
 proot -R $ROOT -b /proc:/proc -b /sys:/sys -b /dev:/dev /sbin/apk add --no-cache \
   --repository https://dl-cdn.alpinelinux.org/alpine/edge/main \
   --repository https://dl-cdn.alpinelinux.org/alpine/edge/community \
-  wine
+  wine flatpak xdg-desktop-portal bubblewrap fuse3 shared-mime-info
 
-mkdir -p $ROOT/etc/steveos $ROOT/var/lib/tailscale $ROOT/opt/discord-bot
+mkdir -p $ROOT/etc/steveos $ROOT/var/lib/tailscale $ROOT/opt/discord-bot $ROOT/var/lib/flatpak $ROOT/home/steve
 
 cat > $ROOT/etc/steveos/server.conf <<'EOF'
 SERVER_HOSTNAME=steveos-server
@@ -58,36 +58,74 @@ TAILSCALE_EXIT_NODE=0
 SSH_ENABLE=0
 EOF
 
-cat > $ROOT/usr/local/bin/steveos-run-exe <<'EOF'
+cat > $ROOT/usr/local/bin/steveos-run-app <<'EOF'
 #!/bin/sh
 set -eu
 
 [ "$#" -ge 1 ] || {
-    echo "usage: runexe /efi/SteveOS/Apps/program.exe"
+    echo "usage: steveos-run-app /efi/SteveOS/Apps/file"
     exit 2
 }
 
-EXE=$1
-case "$EXE" in
-    *.[eE][xX][eE]) ;;
-    *) echo "not a Windows .exe: $EXE"; exit 2 ;;
+APP=$1
+[ -e "$APP" ] || { echo "Application not found: $APP"; exit 1; }
+
+case "$APP" in
+    *.exe|*.EXE|*.com|*.COM)
+        export WINEPREFIX=${WINEPREFIX:-/var/lib/wine}
+        export WINEDEBUG=${WINEDEBUG:--all}
+        mkdir -p "$WINEPREFIX"
+        if command -v xvfb-run >/dev/null 2>&1; then
+            exec xvfb-run -a -s "-screen 0 1280x720x24" wine "$APP"
+        fi
+        exec wine "$APP"
+        ;;
+    *.flatpak)
+        exec flatpak install --user --noninteractive "$APP"
+        ;;
+    *.AppImage|*.appimage)
+        chmod +x "$APP"
+        exec "$APP"
+        ;;
+    *.app|*.APP|*.dmg|*.DMG|*.pkg|*.PKG)
+        if command -v darling >/dev/null 2>&1; then
+            case "$APP" in
+                *.app|*.APP)
+                    exec darling "$APP"
+                    ;;
+                *.dmg|*.DMG)
+                    exec darling shell hdiutil attach "$APP"
+                    ;;
+                *.pkg|*.PKG)
+                    exec darling shell installer -pkg "$APP" -target /
+                    ;;
+            esac
+        fi
+        echo "macOS runtime unavailable: install Darling to run this macOS application."
+        echo "Darling provides macOS compatibility on Linux; GUI support is experimental."
+        exit 127
+        ;;
+    *)
+        if [ -x "$APP" ]; then
+            exec "$APP"
+        fi
+        case "$APP" in
+            *.sh|*.bash) exec sh "$APP" ;;
+            *.py) exec python3 "$APP" ;;
+            *) echo "Unsupported application format: $APP"; exit 126 ;;
+        esac
+        ;;
 esac
-
-[ -f "$EXE" ] || {
-    echo "EXE not found: $EXE"
-    exit 1
-}
-
-export WINEPREFIX=${WINEPREFIX:-/var/lib/wine}
-export WINEDEBUG=${WINEDEBUG:--all}
-mkdir -p "$WINEPREFIX"
-
-if command -v xvfb-run >/dev/null 2>&1; then
-    exec xvfb-run -a -s "-screen 0 1280x720x24" wine "$EXE"
-fi
-
-exec wine "$EXE"
 EOF
+
+chmod +x $ROOT/usr/local/bin/steveos-run-app
+
+cat > $ROOT/usr/local/bin/steveos-run-exe <<'EOF'
+#!/bin/sh
+set -eu
+exec /usr/local/bin/steveos-run-app "$@"
+EOF
+
 
 cat > $ROOT/init <<'EOF'
 #!/bin/sh
@@ -125,6 +163,17 @@ CONF=/etc/steveos/server.conf
 . "$CONF"
 
 hostname "$SERVER_HOSTNAME" 2>/dev/null || true
+
+# Flatpak is provided by the Alpine edge community repository and uses Flathub.
+# Keep the remote configured inside Server Mode so the native GUI can hand off
+# installs without requiring a terminal.
+mkdir -p /var/lib/flatpak
+if command -v flatpak >/dev/null 2>&1; then
+    flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo 2>/dev/null || true
+fi
+export XDG_DATA_HOME=${XDG_DATA_HOME:-/home/steve/.local/share}
+export XDG_CONFIG_HOME=${XDG_CONFIG_HOME:-/home/steve/.config}
+mkdir -p "$XDG_DATA_HOME" "$XDG_CONFIG_HOME"
 
 if [ "$WIFI_ENABLE" = 1 ] && [ -n "$WIFI_SSID" ]; then
     mkdir -p /etc/wpa_supplicant
@@ -228,24 +277,24 @@ start_ssh() {
     /usr/sbin/sshd -D &
 }
 
-run_windows_exe() {
-    [ -f /efi/SteveOS/Server/run-exe.conf ] || return 0
-    EXE_AUTORUN=$(sed -n 's/^EXE_AUTORUN=//p' /efi/SteveOS/Server/run-exe.conf 2>/dev/null | head -n1)
-    case "$EXE_AUTORUN" in
-        /efi/SteveOS/Apps/*.[eE][xX][eE])
-            echo "Launching Windows EXE with Wine: $EXE_AUTORUN"
-            /usr/local/bin/steveos-run-exe "$EXE_AUTORUN" &
-            rm -f /efi/SteveOS/Server/run-exe.conf
+run_requested_app() {
+    [ -f /efi/SteveOS/Server/run-app.conf ] || return 0
+    APP_AUTORUN=$(sed -n 's/^APP_AUTORUN=//p' /efi/SteveOS/Server/run-app.conf 2>/dev/null | head -n1)
+    case "$APP_AUTORUN" in
+        /efi/SteveOS/Apps/*)
+            echo "Launching application: $APP_AUTORUN"
+            /usr/local/bin/steveos-run-app "$APP_AUTORUN" &
+            rm -f /efi/SteveOS/Server/run-app.conf
             ;;
         "") ;;
-        *) echo "Ignoring invalid Windows EXE path" ;;
+        *) echo "Ignoring invalid application path" ;;
     esac
 }
 
 start_tailscale
 start_ssh
 start_discord &
-run_windows_exe &
+run_requested_app &
 
 echo "SteveOS Server Mode"
 ip -brief addr 2>/dev/null || true
@@ -253,6 +302,9 @@ echo "Discord: $DISCORD_ENABLE"
 echo "Tailscale: $TAILSCALE_ENABLE"
 echo "SSH: $SSH_ENABLE"
 echo "Windows EXE runtime: Wine + Xvfb"
+echo "Linux applications: native ELF + AppImage + scripts"
+echo "Flatpak Store: Flathub enabled"
+echo "macOS applications: Darling bridge when installed"
 echo "Multimedia: FFmpeg + GStreamer + ALSA + PipeWire"
 echo "Camera: V4L2 /dev/video*"
 echo "Microphone: ALSA/PipeWire /dev/snd"
