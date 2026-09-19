@@ -10,7 +10,8 @@ CFLAGS := -I/usr/include/efi -I/usr/include/efi/x86_64 \
           -fshort-wchar -mno-red-zone -maccumulate-outgoing-args
 
 KERNEL_CFLAGS := -O2 -ffreestanding -fno-stack-protector -fno-stack-check -fno-pie -fno-pic \
-                 -mno-red-zone -mcmodel=small -Wall -Wextra -I.
+                 -mno-red-zone -mcmodel=small -Wall -Wextra -I. \
+                 -include kernel/desktop_forward.h
 LDFLAGS := -nostdlib -znocombreloc -T $(GNU_EFI_LIBDIR)/elf_x86_64_efi.lds \
            -shared -Bsymbolic -L$(GNU_EFI_LIBDIR) $(GNU_EFI_LIBDIR)/crt0-efi-x86_64.o
 OBJCOPY_FLAGS := -j .text -j .sdata -j .data -j .dynamic -j .dynsym \
@@ -129,7 +130,7 @@ build/native-kernel-main.o: kernel/main.c kernel/desktop.h src/bootinfo.h build/
 	mkdir -p build
 	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
 
-build/native-kernel-desktop.o: kernel/desktop.c kernel/desktop.h src/bootinfo.h build/mint_icons.raw.o tools/prepare_desktop.py
+build/native-kernel-desktop.o: kernel/desktop.c kernel/desktop.h src/bootinfo.h build/mint_icons.raw.o tools/prepare_desktop.py kernel/desktop_forward.h
 	mkdir -p build
 	python3 tools/prepare_desktop.py
 	$(CC) $(KERNEL_CFLAGS) -c kernel/desktop.c -o $@
