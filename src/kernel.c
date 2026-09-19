@@ -391,6 +391,33 @@ static EFI_STATUS steveos_register_named_boot_option(EFI_HANDLE target,const CHA
     }
     FreePool(option);FreePool(dp);return st;
 }
+static EFI_STATUS steveos_install_self(UINT64 target_index){
+    STEVEOS_TARGET_INTERNAL tmp[32]; UINTN count=0;
+    if(EFI_ERROR(steveos_target_handles(tmp,32,&count)) || target_index>=count)
+        return EFI_NOT_FOUND;
+
+    if(!steveos_boot_device)
+        return EFI_NOT_FOUND;
+
+    VOID *image=NULL; UINTN image_size=0;
+    EFI_STATUS st=steveos_fs_read_file(steveos_boot_device,
+                                        L"\\EFI\\BOOT\\BOOTX64.EFI",
+                                        &image,&image_size);
+    if(EFI_ERROR(st) || !image || image_size==0){
+        if(image) FreePool(image);
+        return EFI_NOT_FOUND;
+    }
+
+    st=steveos_install_efi(tmp[target_index].handle,image,image_size);
+    FreePool(image);
+    if(EFI_ERROR(st))
+        return st;
+
+    return steveos_register_named_boot_option(tmp[target_index].handle,
+                                              L"\\EFI\\BOOT\\BOOTX64.EFI",
+                                              L"SteveOS");
+}
+
 static EFI_STATUS steveos_install_server(UINT64 target_index){
     STEVEOS_TARGET_INTERNAL tmp[32];UINTN count=0;
     if(EFI_ERROR(steveos_target_handles(tmp,32,&count))||target_index>=count)return EFI_NOT_FOUND;
