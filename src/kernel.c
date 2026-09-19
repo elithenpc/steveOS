@@ -5,6 +5,7 @@
 #include "bootinfo.h"
 #include "network.h"
 #include "fs.h"
+#include "installer.h"
 
 extern const unsigned char _binary_build_native_kernel_raw_start[];
 extern const unsigned char _binary_build_native_kernel_raw_end[];
