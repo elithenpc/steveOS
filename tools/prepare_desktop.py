@@ -82,7 +82,7 @@ def main():
                         'for(int i=0;i<18;i++){\n        int col=i%cols,row=i/cols', 1)
     text = text.replace(
         'static const int desktop_icon_map[]={0,1,2,3,11,6,5,4,7,13,15,14,15,14,15,15,6};',
-        'static const int desktop_icon_map[]={0,1,2,3,11,6,5,4,7,13,15,14,15,15,15,6,14};', 1)
+        'static const int desktop_icon_map[]={0,1,2,3,11,6,5,4,7,13,15,14,15,14,15,15,6,14};', 1)
     text = text.replace(
         ':i==14?"EFI + WINDOWS APP PACKAGES":i==15?"DISCORD + TAILSCALE SERVICES":"SERVER + BOOT RUNTIME CONTROLS"',
         ':i==14?"EFI + WINDOWS APP PACKAGES":i==15?"DISCORD + TAILSCALE SERVICES":i==16?"SERVER + BOOT RUNTIME CONTROLS":"LINUX + WINDOWS + MAC + FLATPAK"', 1)
