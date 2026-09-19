@@ -37,7 +37,7 @@ jobs:
           cp build/server/vmlinuz-lts usb/SteveOS/Server/vmlinuz-lts
           cp build/server/server-initramfs.img usb/SteveOS/Server/server-initramfs.img
           cp build/server/rootfs/etc/steveos/server.conf usb/SteveOS/Server/server.conf
-          truncate -s 512M steveOS.img
+          truncate -s 2G steveOS.img
           mkfs.fat -F 32 steveOS.img
           mcopy -s -i steveOS.img usb/* ::/
 
