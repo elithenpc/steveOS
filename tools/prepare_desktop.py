@@ -125,7 +125,8 @@ static void draw_compat(void){
 }
 """
     server_anchor='static void draw_server(void){'
-    if not text.includes(server_anchor): raise RuntimeError("draw_server anchor missing")
+    if server_anchor not in text:
+        raise RuntimeError("draw_server anchor missing")
     text=text.replace(server_anchor,compat_helper+'\n'+server_anchor,1)
 
     text=text.replace(
