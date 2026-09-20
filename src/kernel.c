@@ -708,7 +708,7 @@ EFI_STATUS steveos_update_check(STEVEOS_UPDATE_INFO *out) {
     UINTN len = 0;
     UINT32 status = 0;
     static const CHAR16 url[] =
-        L"https://raw.githubusercontent.com/elithenpc/steveOS/main/VERSION";
+        L"https://github.com/elithenpc/steveOS/releases/download/latest/VERSION";
     EFI_STATUS st = steveos_http_get(url, data, 4095, &len, &status);
     if (!EFI_ERROR(st) && status == 200 && len > 0) {
         data[len] = 0;
@@ -737,16 +737,12 @@ EFI_STATUS steveos_update_apply(void) {
         L"https://github.com/elithenpc/steveOS/releases/download/latest/vmlinuz-lts";
     static const CHAR16 initrd_url[] =
         L"https://github.com/elithenpc/steveOS/releases/download/latest/server-initramfs.img";
-    static const CHAR16 config_url[] =
-        L"https://github.com/elithenpc/steveOS/releases/download/latest/server.conf";
 
     st = steveos_download_binary(server_url, L"\\SteveOS\\Server\\ServerBoot.efi");
     if (EFI_ERROR(st)) return st;
     st = steveos_download_binary(kernel_url, L"\\SteveOS\\Server\\vmlinuz-lts");
     if (EFI_ERROR(st)) return st;
     st = steveos_download_binary(initrd_url, L"\\SteveOS\\Server\\server-initramfs.img");
-    if (EFI_ERROR(st)) return st;
-    st = steveos_download_binary(config_url, L"\\SteveOS\\Server\\server.conf");
     if (EFI_ERROR(st)) return st;
 
     /*
