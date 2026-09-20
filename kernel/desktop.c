@@ -1671,7 +1671,7 @@ static void handle_scan(uint8_t s){
             mark_dirty();
         }else{
             apostrophe_pending=1;
-            apostrophe_ticks=500;
+            apostrophe_ticks=800000;
         }
         return;
     }
@@ -1740,6 +1740,11 @@ static void handle_scan(uint8_t s){
 static void render(void){
     switch(current_app){case APP_DESKTOP:draw_desktop();break;case APP_BROWSER:draw_browser();break;case APP_CALC:draw_calc();break;case APP_EDITOR:draw_editor();break;case APP_FILES:draw_files();break;case APP_IMAGE:draw_image();break;case APP_SETTINGS:draw_settings();break;case APP_TASKS:draw_tasks();break;case APP_TERMINAL:draw_terminal();break;case APP_CALENDAR:draw_calendar();break;case APP_CONTROL:draw_control();break;case APP_SYSINFO:draw_sysinfo();break;case APP_DEVICES:scan_pci_devices();draw_devices();break;case APP_INSTALLER:draw_installer();break;case APP_STORE:draw_store();break;case APP_SERVER:draw_server();break;case APP_ADVANCED:draw_advanced();break;default:draw_about();break;}
     draw_power_menu();
+    if(mouse_keyboard_mode){
+        fill_rect(12,12,190,30,panel_color());
+        stroke_rect(12,12,190,30,accent_color());
+        text(22,20,"ARROW MOUSE ON",accent_color(),1);
+    }
     present();dirty=0;
 }
 
