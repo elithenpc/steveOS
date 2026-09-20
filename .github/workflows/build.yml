@@ -51,12 +51,14 @@ jobs:
           set -eux
           test -f build/BOOTX64.EFI
           test -f build/apps/Hello.efi
+          test -f build/server/ServerBoot.efi
           test -f build/server/vmlinuz-lts
           test -f build/server/server-initramfs.img
           test -f build/server/rootfs/etc/steveos/server.conf
           mkdir -p usb/EFI/BOOT usb/Apps usb/SteveOS/Server
           cp build/BOOTX64.EFI usb/EFI/BOOT/BOOTX64.EFI
           cp build/apps/Hello.efi usb/Apps/Hello.efi
+          cp build/server/ServerBoot.efi usb/SteveOS/Server/ServerBoot.efi
           cp build/server/vmlinuz-lts usb/SteveOS/Server/vmlinuz-lts
           cp build/server/server-initramfs.img usb/SteveOS/Server/server-initramfs.img
           cp build/server/rootfs/etc/steveos/server.conf usb/SteveOS/Server/server.conf
@@ -69,6 +71,7 @@ jobs:
         run: |
           mdir -i steveOS.img ::/EFI/BOOT
           mdir -i steveOS.img ::/SteveOS/Server
+          mdir -i steveOS.img ::/SteveOS/Server/ServerBoot.efi
           mdir -i steveOS.img ::/Apps
 
       - name: Upload steveOS build
