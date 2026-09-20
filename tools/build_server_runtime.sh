@@ -278,10 +278,30 @@ exec /bin/sh
 EOF
 chmod +x $ROOT/init
 
-# Export the Alpine kernel and initramfs into the deterministic artifacts
-# consumed by the USB image builder. The packages install these under /boot,
-# but the image assembly must not depend on that internal rootfs layout.
+# Export the Alpine kernel. ServerBoot starts it with the prepared SteveOS
+# userspace packed into the accompanying initramfs.
 test -f $ROOT/boot/vmlinuz-lts
-test -f $ROOT/boot/initramfs-lts
 cp $ROOT/boot/vmlinuz-lts $WORK/vmlinuz-lts
-cp $ROOT/boot/initramfs-lts $WORK/server-initramfs.img
+
+# The stock Alpine initramfs expects Alpine's normal disk layout. SteveOS
+# instead ships the complete prepared Server Mode userspace so the runtime is
+# self-contained on the USB image.
+rm -f $WORK/server-initramfs.img
+(
+    cd "$ROOT"
+    find . -xdev -print0 | cpio --null -o -H newc
+) | gzip -9 > $WORK/server-initramfs.img
+
+# Restore the UEFI Server Mode launcher. GRUB embeds this configuration so the
+# launcher can boot directly from the SteveOS FAT32 image.
+mkdir -p $WORK/grub
+cat > $WORK/grub/grub.cfg <<'EOF'
+search --file --set=root /SteveOS/Server/vmlinuz-lts
+linux /SteveOS/Server/vmlinuz-lts console=tty0
+initrd /SteveOS/Server/server-initramfs.img
+boot
+EOF
+grub-mkstandalone     -O x86_64-efi     -o $WORK/ServerBoot.efi     "boot/grub/grub.cfg=$WORK/grub/grub.cfg"
+
+test -s $WORK/ServerBoot.efi
+test -s $WORK/server-initramfs.img
