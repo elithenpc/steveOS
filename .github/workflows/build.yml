@@ -34,10 +34,10 @@ jobs:
           from pathlib import Path
           p = Path('Makefile')
           s = p.read_text()
-          old = '''\tpython3 tools/prepare_desktop.py\n\tpython3 tools/fix_desktop_decls.py\n\t$(PYTHON) tools/add_crd_gui.py'''
+          old = '''\tpython3 tools/fix_desktop_decls.py\n\tpython3 tools/prepare_desktop.py\n\t$(PYTHON) tools/add_crd_gui.py'''
           new = '''\tpython3 tools/prepare_desktop.py\n\tpython3 tools/fix_desktop_decls.py\n\t$(PYTHON) tools/add_crd_gui.py'''
           if old not in s:
-              raise SystemExit('desktop build recipe changed unexpectedly')
+              raise SystemExit('desktop build recipe is not in the expected order')
           p.write_text(s.replace(old, new, 1))
           PY
 
