@@ -21,11 +21,15 @@ jobs:
       - name: Validate Server Mode script
         run: sh -n tools/build_server_runtime.sh
 
+      - name: Validate Python desktop tools
+        run: |
+          python3 -m py_compile tools/prepare_desktop.py tools/fix_desktop_decls.py tools/add_crd_gui.py
+
       - name: Build Server Mode runtime
         run: sh tools/build_server_runtime.sh
 
       - name: Build BOOTX64.EFI
-        run: make
+        run: make PYTHON=python3
 
       - name: Assemble bootable USB image
         run: |
