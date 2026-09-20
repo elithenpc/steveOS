@@ -34,11 +34,13 @@ jobs:
           from pathlib import Path
           p = Path('Makefile')
           s = p.read_text()
+          good = '''\tpython3 tools/prepare_desktop.py\n\tpython3 tools/fix_desktop_decls.py\n\t$(PYTHON) tools/add_crd_gui.py'''
           old = '''\tpython3 tools/fix_desktop_decls.py\n\tpython3 tools/prepare_desktop.py\n\t$(PYTHON) tools/add_crd_gui.py'''
-          new = '''\tpython3 tools/prepare_desktop.py\n\tpython3 tools/fix_desktop_decls.py\n\t$(PYTHON) tools/add_crd_gui.py'''
-          if old not in s:
-              raise SystemExit('desktop build recipe is not in the expected order')
-          p.write_text(s.replace(old, new, 1))
+          if old in s:
+              s = s.replace(old, good, 1)
+              p.write_text(s)
+          elif good not in s:
+              raise SystemExit('desktop build recipe is not in a recognised safe order')
           PY
 
       - name: Build BOOTX64.EFI
