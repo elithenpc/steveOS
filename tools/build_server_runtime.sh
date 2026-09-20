@@ -246,7 +246,10 @@ start_tailscale() {
     tailscaled --state=/var/lib/tailscale/tailscaled.state >/var/log/tailscaled.log 2>&1 &
     sleep 2
     if [ -n "$TAILSCALE_AUTHKEY" ]; then
-        tailscale up --authkey="$TAILSCALE_AUTHKEY" ${TAILSCALE_ADVERTISE_ROUTES:+--advertise-routes="$TAILSCALE_ADVERTISE_ROUTES"} ${TAILSCALE_EXIT_NODE:+--advertise-exit-node} >/var/log/tailscale-up.log 2>&1 || true
+        set -- tailscale up --authkey="$TAILSCALE_AUTHKEY"
+        [ -n "$TAILSCALE_ADVERTISE_ROUTES" ] && set -- "$@" --advertise-routes="$TAILSCALE_ADVERTISE_ROUTES"
+        [ "$TAILSCALE_EXIT_NODE" = 1 ] && set -- "$@" --advertise-exit-node
+        "$@" >/var/log/tailscale-up.log 2>&1 || true
     fi
 }
 
