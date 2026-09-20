@@ -626,7 +626,7 @@ EFI_STATUS steveos_run_windows_app(const CHAR16 *source_path){
 
 
 #define STEVEOS_VERSION "1.3.0"
-#define STEVEOS_UPDATE_MAX (192ULL * 1024ULL * 1024ULL)
+#define STEVEOS_UPDATE_MAX (512ULL * 1024ULL * 1024ULL)
 
 static uint32_t steveos_version_value(const char *s) {
     uint32_t parts[3] = {0,0,0};
@@ -737,6 +737,8 @@ EFI_STATUS steveos_update_apply(void) {
         L"https://github.com/elithenpc/steveOS/releases/download/latest/vmlinuz-lts";
     static const CHAR16 initrd_url[] =
         L"https://github.com/elithenpc/steveOS/releases/download/latest/server-initramfs.img";
+    static const CHAR16 config_url[] =
+        L"https://github.com/elithenpc/steveOS/releases/download/latest/server.conf";
 
     st = steveos_download_binary(server_url, L"\\SteveOS\\Server\\ServerBoot.efi");
     if (EFI_ERROR(st)) return st;
@@ -744,7 +746,14 @@ EFI_STATUS steveos_update_apply(void) {
     if (EFI_ERROR(st)) return st;
     st = steveos_download_binary(initrd_url, L"\\SteveOS\\Server\\server-initramfs.img");
     if (EFI_ERROR(st)) return st;
+    st = steveos_download_binary(config_url, L"\\SteveOS\\Server\\server.conf");
+    if (EFI_ERROR(st)) return st;
 
+    /*
+     * Human downloads use the compressed SteveOS-USB.zip asset. The native
+     * updater downloads individual release files instead, so it does not need
+     * a ZIP extractor and does not replace the whole filesystem.
+     */
     /* Replace the currently booted loader last. UEFI has already loaded it into memory. */
     st = steveos_download_binary(boot_url, L"\\EFI\\BOOT\\BOOTX64.EFI");
     return st;
