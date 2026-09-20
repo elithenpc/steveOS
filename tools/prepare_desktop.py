@@ -244,7 +244,7 @@ static void toggle_setting(uint8_t bit){service_flags^=bit;save_settings();mark_
     # Make the extended settings visible in HELP output.
     text = text.replace('TYPE HELP FOR COMMANDS', 'TYPE HELP FOR COMMANDS  •  SETTINGS  •  SETTING UPDATEAUTO/NOTIFY/ANIMATIONS/CLOCK24/SAFE', 1)
 
-    DESKTOP.write_text(text, encoding="utf-8")
+    text += "\n/* STEVEOS_EXTENDED_SETTINGS_2 */\n"\n    DESKTOP.write_text(text, encoding="utf-8")
 
 
 if __name__ == "__main__":
