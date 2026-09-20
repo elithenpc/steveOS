@@ -180,14 +180,16 @@ static uint32_t good_color(void){return light_theme?0x3E8A50u:0x88CF98u;}
 
 static void mark_dirty(void){dirty=1;}
 static void round_rect(int x,int y,int w,int h,int r,uint32_t col){
+    static const uint8_t inset12[13]={12,8,6,5,4,3,2,1,1,1,0,0,0};
     if(w<=0||h<=0)return;
     if(r<1)r=1;
+    if(r>12)r=12;
     if(r*2>w)r=w/2;
     if(r*2>h)r=h/2;
     for(int yy=0;yy<h;yy++){
         int inset=0;
-        if(yy<r){int dy=r-1-yy;inset=r-(int)__builtin_sqrt((double)(r*r-dy*dy));}
-        else if(yy>=h-r){int dy=yy-(h-r);inset=r-(int)__builtin_sqrt((double)(r*r-dy*dy));}
+        if(yy<r)inset=inset12[r-yy];
+        else if(yy>=h-r)inset=inset12[yy-(h-r)+1];
         fill_rect(x+inset,y+yy,w-inset*2,1,col);
     }
 }
@@ -508,16 +510,16 @@ static void taskbar(void){
     int h=54,y=(int)height-h;
     fill_rect(0,y,(int)width,h,light_theme?0xD5DCE1u:0x161D26u);
     fill_rect(0,y,(int)width,1,light_theme?0xBAC4CBu:0x2A3643u);
-    round_panel(12,y+8,58,38,menu_open?accent_dark():accent_color());
+    round_panel(12,y+4,58,46,menu_open?accent_dark():accent_color());
     text(25,y+20,"MENU",0xFFFFFFu,1);
     const int icon_ids[]={0,1,2,3,4,6};
     const int apps[]={APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_TERMINAL,APP_SETTINGS};
     for(int i=0;i<6;i++){
-        int x=84+i*72;round_panel(x,y+8,64,38,(current_app==apps[i])?panel2_color():panel_color());
+        int x=84+i*72;round_panel(x,y+4,64,46,(current_app==apps[i])?panel2_color():panel_color());
         draw_icon(x+6,y+1,icon_ids[i]);
     }
     text((int)width-154,y+20,update_info.available?"UPDATE READY":"STEVEOS",update_info.available?danger_color():sub_color(),1);
-    round_panel((int)width-76,y+8,64,38,power_menu?accent_dark():panel_color());
+    round_panel((int)width-76,y+4,64,46,power_menu?accent_dark():panel_color());
     text((int)width-64,y+20,"POWER",text_color(),1);
 }
 static void draw_power_menu(void){
