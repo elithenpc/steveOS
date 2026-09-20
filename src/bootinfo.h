@@ -60,6 +60,7 @@ typedef struct {
     uint64_t uefi_get_variable;
     uint64_t uefi_set_variable;
     uint64_t uefi_get_time;
+    uint64_t uefi_reset_system;
     uint64_t uefi_http_get;
     uint64_t uefi_write_text;
     uint64_t uefi_list_install_targets;
