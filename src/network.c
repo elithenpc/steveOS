@@ -207,7 +207,7 @@ static EFI_STATUS steveos_http_get_internal(const CHAR16 *url,
     if (EFI_ERROR(st))
         goto cleanup;
 
-    for (UINTN waited = 0; !request_done && waited < 10000; ++waited) {
+    for (UINTN waited = 0; !request_done && waited < 300000; ++waited) {
         if (http->Poll)
             uefi_call_wrapper(http->Poll, 1, http);
         uefi_call_wrapper(BS->Stall, 1, 1000);
