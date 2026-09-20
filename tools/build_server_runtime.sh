@@ -277,3 +277,11 @@ fi
 exec /bin/sh
 EOF
 chmod +x $ROOT/init
+
+# Export the Alpine kernel and initramfs into the deterministic artifacts
+# consumed by the USB image builder. The packages install these under /boot,
+# but the image assembly must not depend on that internal rootfs layout.
+test -f $ROOT/boot/vmlinuz-lts
+test -f $ROOT/boot/initramfs-lts
+cp $ROOT/boot/vmlinuz-lts $WORK/vmlinuz-lts
+cp $ROOT/boot/initramfs-lts $WORK/server-initramfs.img
