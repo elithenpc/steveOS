@@ -55,6 +55,7 @@ extern void native_pointer_set_scale(uint8_t);
 extern uint8_t native_keyboard_read_scancode(void);
 extern uint32_t native_pointer_x(void), native_pointer_y(void);
 extern uint8_t native_pointer_buttons(void);
+extern void native_pointer_move(int32_t,int32_t,uint8_t);
 extern void native_pointer_hide(void), native_pointer_show(void);
 extern int native_usb_mouse_present(void), native_i2c_hid_present(void);
 extern const unsigned char _binary_build_boot_raw_start[], _binary_build_boot_raw_end[];
@@ -123,6 +124,8 @@ static char browser_tabs[4][BROWSER_URL_MAX+1];
 static uint8_t browser_bookmark_count;
 static char browser_bookmarks[8][BROWSER_URL_MAX+1];
 static uint8_t ctrl_down,alt_down;
+static uint8_t mouse_keyboard_mode,apostrophe_pending;
+static uint16_t apostrophe_ticks;
 static uint8_t shift_down;
 static uint8_t dirty=1;
 
@@ -1652,8 +1655,35 @@ static void calc_key(uint8_t s){
     if(allowed&&calc_len<CALC_MAX){calc_input[calc_len++]=c;calc_input[calc_len]=0;calc_has_result=0;}
 }
 
+static void mouse_keyboard_click(void){
+    native_pointer_move(0,0,1);
+    for(volatile int i=0;i<3000;i++)__asm__ __volatile__("pause");
+    native_pointer_move(0,0,0);
+}
+
 static void handle_scan(uint8_t s){
     if(!s)return;
+    if(s==0x28){
+        if(apostrophe_pending&&apostrophe_ticks){
+            mouse_keyboard_mode^=1;
+            apostrophe_pending=0;
+            apostrophe_ticks=0;
+            mark_dirty();
+        }else{
+            apostrophe_pending=1;
+            apostrophe_ticks=500;
+        }
+        return;
+    }
+    if(mouse_keyboard_mode){
+        if(s==0x01){mouse_keyboard_mode=0;apostrophe_pending=0;apostrophe_ticks=0;mark_dirty();return;}
+        if(s==0x48){native_pointer_move(0,-12,0);mark_dirty();return;}
+        if(s==0x50){native_pointer_move(0,12,0);mark_dirty();return;}
+        if(s==0x4B){native_pointer_move(-12,0,0);mark_dirty();return;}
+        if(s==0x4D){native_pointer_move(12,0,0);mark_dirty();return;}
+        if(s==0x1C){mouse_keyboard_click();mark_dirty();return;}
+        return;
+    }
     if(s==0x2A||s==0x36){shift_down=1;return;}
     if(s==0xAA||s==0xB6){shift_down=0;return;}
     if(s==0x1D){ctrl_down=1;return;}
@@ -1722,6 +1752,7 @@ void steveos_desktop_run(STEVEOS_BOOT_INFO *boot){
     uint8_t last_b=native_pointer_buttons();
     uint32_t refresh_ticks=0;
     for(;;){
+        if(apostrophe_pending){if(apostrophe_ticks)apostrophe_ticks--;else apostrophe_pending=0;}
         uint8_t s=native_keyboard_read_scancode();if(s){handle_scan(s);dirty=1;}
         uint32_t x=native_pointer_x(),y=native_pointer_y();uint8_t b=native_pointer_buttons();
         if(x!=last_x||y!=last_y||b!=last_b){dirty=1;last_x=x;last_y=y;last_b=b;}
