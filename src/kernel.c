@@ -839,6 +839,7 @@ EFI_STATUS steveos_kernel_boot(EFI_HANDLE image_handle,
     boot->uefi_get_variable = (UINT64)(UINTN)RT->GetVariable;
     boot->uefi_set_variable = (UINT64)(UINTN)RT->SetVariable;
     boot->uefi_get_time = (UINT64)(UINTN)RT->GetTime;
+    boot->uefi_reset_system = (UINT64)(UINTN)RT->ResetSystem;
     boot->uefi_http_get = (UINT64)(UINTN)steveos_http_get;
     boot->uefi_write_text = (UINT64)(UINTN)steveos_write_boot_text;
     boot->uefi_list_install_targets = (UINT64)(UINTN)steveos_list_install_targets;
