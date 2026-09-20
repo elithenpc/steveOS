@@ -33,6 +33,7 @@ jobs:
           mkdir -p usb/EFI/BOOT usb/Apps usb/SteveOS/Server
           cp build/BOOTX64.EFI usb/EFI/BOOT/BOOTX64.EFI
           cp build/apps/Hello.efi usb/Apps/Hello.efi
+          test -f build/server/ServerBoot.efi
           cp build/server/ServerBoot.efi usb/SteveOS/Server/ServerBoot.efi
           cp build/server/vmlinuz-lts usb/SteveOS/Server/vmlinuz-lts
           cp build/server/server-initramfs.img usb/SteveOS/Server/server-initramfs.img
