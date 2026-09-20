@@ -34,7 +34,7 @@ jobs:
           from pathlib import Path
           p = Path('Makefile')
           s = p.read_text()
-          good = '''\tpython3 tools/prepare_desktop.py\n\tpython3 tools/fix_desktop_decls.py\n\t$(PYTHON) tools/add_crd_gui.py'''
+          good = '''\tpython3 tools/prepare_desktop.py\n\tpython3 tools/fix_desktop_decls.py\n\tpython3 tools/add_crd_gui.py'''
           old = '''\tpython3 tools/fix_desktop_decls.py\n\tpython3 tools/prepare_desktop.py\n\t$(PYTHON) tools/add_crd_gui.py'''
           if old in s:
               s = s.replace(old, good, 1)
