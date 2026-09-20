@@ -190,6 +190,9 @@ fi
 CONF=/etc/steveos/server.conf
 [ -f /efi/SteveOS/Server/server.conf ] && CONF=/efi/SteveOS/Server/server.conf
 . "$CONF"
+# Native desktop service toggles are stored separately so editing server.conf
+# never destroys bot tokens, Wi-Fi credentials, or other user configuration.
+[ -f /efi/SteveOS/Server/services.conf ] && . /efi/SteveOS/Server/services.conf
 
 hostname "$SERVER_HOSTNAME" 2>/dev/null || true
 
