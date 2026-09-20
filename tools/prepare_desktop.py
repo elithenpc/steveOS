@@ -232,7 +232,31 @@ static void toggle_setting(uint8_t bit){service_flags^=bit;save_settings();mark_
         raise RuntimeError("terminal update anchor missing")
     text = text.replace(anchor, replacement, 1)
 
-    # Auto-check is now controlled by the persistent setting. Existing update code
+    # Keep native service toggles synchronized with Server Mode without
+    # overwriting the user's main server.conf.
+    service_sync = r'''static void sync_server_services(void){
+    if(!boot_info||!boot_info->uefi_write_text)return;
+    char cfg[96];int n=0;
+    const char*p="DISCORD_ENABLE=";while(*p&&n<90)cfg[n++]=*p++;
+    cfg[n++]=(service_flags&1)?'1':'0';cfg[n++]='\n';
+    p="TAILSCALE_ENABLE=";while(*p&&n<90)cfg[n++]=*p++;
+    cfg[n++]=(service_flags&2)?'1':'0';cfg[n++]='\n';
+    p="SSH_ENABLE=";while(*p&&n<90)cfg[n++]=*p++;
+    cfg[n++]=(service_flags&4)?'1':'0';cfg[n++]='\n';cfg[n]=0;
+    uint16_t path[64];size_t q=0;const char*wp="\\SteveOS\\Server\\services.conf";
+    while(*wp&&q+1<sizeof(path)/sizeof(path[0]))path[q++]=(uint16_t)(unsigned char)*wp++;
+    path[q]=0;
+    WRITEFILE wr=(WRITEFILE)(uintptr_t)boot_info->uefi_write_text;
+    (void)wr(path,cfg,(uint64_t)n);
+}
+'''
+    if marker not in text:
+        raise RuntimeError("service sync insertion anchor missing")
+    text=text.replace(marker, service_sync + '\n' + marker, 1)
+    boot_marker='static void terminal_server_boot(void){'
+    if boot_marker not in text:
+        raise RuntimeError("server boot function anchor missing")
+    text=text.replace(boot_marker, boot_marker+'\n    sync_server_services();', 1)
     # still performs the real GitHub VERSION lookup and exposes the result in the UI.
     text = text.replace('if(++refresh_ticks>=8000){refresh_ticks=0;refresh_network_info();if(!update_checked)refresh_update_info();dirty=1;}',
                         'if(++refresh_ticks>=8000){refresh_ticks=0;refresh_network_info();if((service_flags&8)&&!update_checked)refresh_update_info();if((service_flags&16)&&update_info.available)terminal_add("STEVEOS UPDATE AVAILABLE - OPEN ADVANCED SETTINGS");dirty=1;}',
