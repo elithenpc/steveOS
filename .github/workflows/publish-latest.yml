@@ -24,7 +24,7 @@ jobs:
       - name: Install UEFI build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc binutils gnu-efi python3 python3-pil mtools dosfstools cpio gzip grub-efi-amd64-bin grub-common curl proot
+          sudo apt-get install -y gcc binutils gnu-efi python3 python3-pil mtools dosfstools cpio gzip zip grub-efi-amd64-bin grub-common curl proot
 
       - name: Build Server Mode runtime
         run: sh tools/build_server_runtime.sh
@@ -45,14 +45,16 @@ jobs:
           truncate -s 1900M steveOS.img
           mkfs.fat -F 32 steveOS.img
           mcopy -s -i steveOS.img usb/* ::/
+          zip -9 -q SteveOS-USB.zip steveOS.img
+          sha256sum SteveOS-USB.zip steveOS.img > SHA256SUMS
 
       - name: Publish rolling latest release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view latest >/dev/null 2>&1; then
-            gh release upload latest               build/BOOTX64.EFI               build/server/ServerBoot.efi               build/server/vmlinuz-lts               build/server/server-initramfs.img               steveOS.img               --clobber
+            gh release upload latest               build/BOOTX64.EFI               build/server/ServerBoot.efi               build/server/vmlinuz-lts               build/server/server-initramfs.img               steveOS.img               SteveOS-USB.zip               SHA256SUMS               VERSION               --clobber
             gh release edit latest               --title "SteveOS Latest"               --notes "Rolling build from the main branch. The SteveOS native Update Centre checks VERSION and downloads these assets."
           else
-            gh release create latest               build/BOOTX64.EFI               build/server/ServerBoot.efi               build/server/vmlinuz-lts               build/server/server-initramfs.img               steveOS.img               --title "SteveOS Latest"               --notes "Rolling build from the main branch. The SteveOS native Update Centre checks VERSION and downloads these assets."
+            gh release create latest               build/BOOTX64.EFI               build/server/ServerBoot.efi               build/server/vmlinuz-lts               build/server/server-initramfs.img               steveOS.img               SteveOS-USB.zip               SHA256SUMS               VERSION               --title "SteveOS Latest"               --notes "Rolling build from the main branch. The SteveOS native Update Centre checks VERSION and downloads these assets."
           fi
