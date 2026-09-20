@@ -28,6 +28,19 @@ jobs:
       - name: Build Server Mode runtime
         run: sh tools/build_server_runtime.sh
 
+      - name: Normalise desktop build pipeline
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('Makefile')
+          s = p.read_text()
+          old = '''\tpython3 tools/prepare_desktop.py\n\tpython3 tools/fix_desktop_decls.py\n\t$(PYTHON) tools/add_crd_gui.py'''
+          new = '''\tpython3 tools/prepare_desktop.py\n\tpython3 tools/fix_desktop_decls.py\n\t$(PYTHON) tools/add_crd_gui.py'''
+          if old not in s:
+              raise SystemExit('desktop build recipe changed unexpectedly')
+          p.write_text(s.replace(old, new, 1))
+          PY
+
       - name: Build BOOTX64.EFI
         run: make PYTHON=python3
 
