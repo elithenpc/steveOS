@@ -133,7 +133,7 @@ build/native-kernel-desktop.o: kernel/desktop.c kernel/desktop.h src/bootinfo.h 
 	mkdir -p build
 	python3 tools/prepare_desktop.py
 	python3 tools/fix_desktop_decls.py
-	$(PYTHON) tools/add_crd_gui.py
+	python3 tools/add_crd_gui.py
 	$(CC) $(KERNEL_CFLAGS) -c kernel/desktop.c -o $@
 
 build/native_kernel.elf: build/native-kernel-entry.o build/native-kernel-main.o build/native-kernel-desktop.o build/native-kernel-arch.o build/native-kernel-usb.o build/native-kernel-i2c.o build/native-kernel-input.o build/boot.raw.o build/mint_icons.raw.o
