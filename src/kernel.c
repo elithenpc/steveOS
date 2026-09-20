@@ -446,14 +446,20 @@ static BOOLEAN steveos_is_efi_name(const CHAR16 *name){
            (name[n-2]==L'f'||name[n-2]==L'F')&&
            (name[n-1]==L'i'||name[n-1]==L'I');
 }
-static BOOLEAN steveos_is_exe_name(const CHAR16 *name){
+static BOOLEAN steveos_is_windows_app_name(const CHAR16 *name){
     if(!name)return FALSE;
     UINTN n=0;while(name[n])n++;
-    return n>=4&&name[n-4]==L'.'&&
-           (name[n-3]==L'e'||name[n-3]==L'E')&&
-           (name[n-2]==L'x'||name[n-2]==L'X')&&
-           (name[n-1]==L'e'||name[n-1]==L'E');
+    if(n<4||name[n-4]!=L'.')return FALSE;
+    CHAR16 a=name[n-3],b=name[n-2],c=name[n-1];
+    if(a>=L'A'&&a<=L'Z')a=(CHAR16)(a-L'A'+L'a');
+    if(b>=L'A'&&b<=L'Z')b=(CHAR16)(b-L'A'+L'a');
+    if(c>=L'A'&&c<=L'Z')c=(CHAR16)(c-L'A'+L'a');
+    return (a==L'e'&&b==L'x'&&c==L'e')||(a==L'c'&&b==L'o'&&c==L'm')||
+           (a==L'b'&&b==L'a'&&c==L't')||(a==L'c'&&b==L'm'&&c==L'd')||
+           (a==L'j'&&b==L's'&&c==L' ')||(a==L'p'&&b==L'y'&&c==L' ')||
+           (a==L's'&&b==L'h'&&c==L' ');
 }
+static BOOLEAN steveos_is_exe_name(const CHAR16 *name){return steveos_is_windows_app_name(name);}
 static BOOLEAN steveos_is_windows_safe_name(const CHAR16 *name){
     if(!name||!name[0])return FALSE;
     for(UINTN i=0;name[i];i++){
@@ -546,7 +552,7 @@ static BOOLEAN steveos_is_installed_windows_path(const CHAR16 *path){
 }
 
 EFI_STATUS steveos_install_windows_app(const CHAR16 *source_path){
-    if(!source_path||!steveos_boot_device||!steveos_is_exe_name(steveos_basename(source_path))||
+    if(!source_path||!steveos_boot_device||!steveos_is_windows_app_name(steveos_basename(source_path))||
        !steveos_is_windows_safe_name(steveos_basename(source_path)))return EFI_INVALID_PARAMETER;
 
     const CHAR16 *name=steveos_basename(source_path);
@@ -596,7 +602,7 @@ EFI_STATUS steveos_install_windows_app(const CHAR16 *source_path){
 }
 
 EFI_STATUS steveos_run_windows_app(const CHAR16 *source_path){
-    if(!source_path||!steveos_boot_device||!steveos_is_exe_name(steveos_basename(source_path))||
+    if(!source_path||!steveos_boot_device||!steveos_is_windows_app_name(steveos_basename(source_path))||
        !steveos_is_windows_safe_name(steveos_basename(source_path)))return EFI_INVALID_PARAMETER;
 
     EFI_FILE_PROTOCOL *root=NULL,*server=NULL,*probe=NULL;
