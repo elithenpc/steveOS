@@ -63,7 +63,7 @@ jobs:
           cp build/server/server-initramfs.img usb/SteveOS/Server/server-initramfs.img
           cp build/server/rootfs/etc/steveos/server.conf usb/SteveOS/Server/server.conf
           cp tools/build_server_runtime.sh usb/SteveOS/Server/build_server_runtime.sh
-          truncate -s 2G steveOS.img
+          truncate -s 1900M steveOS.img
           mkfs.fat -F 32 steveOS.img
           mcopy -s -i steveOS.img usb/* ::/
 
