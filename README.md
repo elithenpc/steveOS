@@ -4,7 +4,6 @@ A growing x86-64 operating system project with a native framebuffer desktop, rea
 
 ## Current milestone: native desktop + server foundation 1.1
 
-
 steveOS boots through UEFI, selects a GOP graphics mode, prepares the native kernel environment, and launches the native framebuffer desktop while deliberately retaining the UEFI services needed by selected compatibility bridges.
 
 The native desktop includes:
@@ -24,9 +23,9 @@ The native desktop includes:
 - Calendar and live firmware clock
 - Hardware Control Center
 - Native terminal with application, network, disk, package, service, and system commands
+- Compatibility Hub for Linux, Windows, Flatpak and macOS application handoff
+- Chrome Remote Desktop launcher for connecting to Windows PCs through the real Chromium/WebRTC client in Server Mode
 - Global close button, taskbar launchers, power controls, keyboard shortcuts, Alt+Tab, and start menu
-
-
 
 Networking is deliberately not probed during early boot. Web requests are on-demand from the desktop so firmware networking is only entered when the user asks the browser to load a page.
 
@@ -51,6 +50,7 @@ SteveOS desktop shell
     ├── Filesystem / installer
     ├── Task manager
     ├── Image viewer
+    ├── Compatibility Hub
     └── Web browser → UEFI HTTP services
 ```
 
@@ -64,9 +64,17 @@ From the live USB, open **Installer**. SteveOS lists other EFI filesystem volume
 
 Place UEFI `.EFI` or Windows `.EXE` applications under `\\Apps` on the boot volume to make them appear in App Store. App Store can install them to `\\SteveOS\\Apps`. EFI packages launch directly from firmware; EXE packages boot Server Mode and run through Wine. EXE compatibility varies by application and its Windows dependencies.
 
+## Chrome Remote Desktop
+
+The Compatibility Hub now includes **Chrome Remote Desktop**. The native desktop requests Server Mode and launches Chromium at `https://remotedesktop.google.com/access`, where Google provides the JavaScript/WebRTC Chrome Remote Desktop client. Chrome Remote Desktop officially supports accessing Windows computers from a computer through the web client. citeturn0search0turn0search4
+
+The Windows computer must already have Chrome Remote Desktop remote access configured. In Google's documented flow, the client signs in, selects the configured computer and enters its PIN. Sessions use Google's encrypted remote-desktop service and WebRTC connectivity. citeturn0search4turn0search3
+
+SteveOS's small native framebuffer browser is intentionally not used for the CRD session because it is a lightweight HTML/text browser rather than a full JavaScript/WebRTC engine. Chromium is therefore part of Server Mode for this feature.
+
 ## Server
 
-See [docs/SERVER.md](docs/SERVER.md) for the Discord, Tailscale and Windows runtime details. Server Mode supplies the Linux userspace used for these compatibility services; the native SteveOS desktop does not directly execute Windows PE files.
+See [docs/SERVER.md](docs/SERVER.md) for the Discord, Tailscale, Windows runtime, Flatpak and Chrome Remote Desktop details. Server Mode supplies the Linux userspace used for these compatibility services; the native SteveOS desktop does not directly execute Windows PE files.
 
 ## Testing
 
@@ -76,12 +84,11 @@ On real hardware, networking depends on the firmware exposing the UEFI HTTP serv
 
 ## Hardware and compatibility
 
-Server Mode now uses Alpine Linux 3.24.2 with the LTS kernel and exposes the host device tree to its Linux userspace. The runtime includes broad command-line tooling, Intel firmware, networking, Wine/Xvfb for Windows `.EXE` programs, FFmpeg, GStreamer, ALSA, PipeWire and V4L2 tooling for audio/video devices. Camera devices appear as `/dev/video*` and audio devices as `/dev/snd` when the Linux kernel and hardware expose them. These are Server Mode capabilities, not yet native SteveOS kernel drivers.
+Server Mode now uses Alpine Linux 3.24.2 with the LTS kernel and exposes the host device tree to its Linux userspace. The runtime includes broad command-line tooling, Intel firmware, networking, Wine/Xvfb for Windows `.EXE` programs, Chromium for JavaScript/WebRTC applications, FFmpeg, GStreamer, ALSA, PipeWire and V4L2 tooling for audio/video devices. Camera devices appear as `/dev/video*` and audio devices as `/dev/snd` when the Linux kernel and hardware expose them. These are Server Mode capabilities, not yet native SteveOS kernel drivers.
 
 ## Updates
 
 SteveOS checks the public VERSION file on GitHub after startup and can show an UPDATE READY notification. Advanced Settings and the terminal commands UPDATE, UPDATE CHECK and UPDATE INSTALL can check or install the rolling latest release. Installing an update replaces the native EFI loader and Server Mode runtime files; reboot after a successful install.
-
 
 ## Windows EXE compatibility
 
