@@ -84,6 +84,18 @@ case "$APP" in
         fi
         exec wine "$APP"
         ;;
+    *.bat|*.BAT|*.cmd|*.CMD)
+        export WINEPREFIX=${WINEPREFIX:-/var/lib/wine}
+        export WINEDEBUG=${WINEDEBUG:--all}
+        mkdir -p "$WINEPREFIX"
+        if command -v xvfb-run >/dev/null 2>&1; then
+            exec xvfb-run -a -s "-screen 0 1280x720x24" wine cmd /c "$APP"
+        fi
+        exec wine cmd /c "$APP"
+        ;;
+    *.js|*.JS)
+        exec node "$APP"
+        ;;
     *.flatpak)
         exec flatpak install --user --noninteractive "$APP"
         ;;
