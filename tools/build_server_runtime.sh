@@ -32,11 +32,14 @@ proot -R $ROOT -b /proc:/proc -b /sys:/sys -b /dev:/dev /sbin/apk add --no-cache
   mesa-dri-gallium mesa-gl mesa-egl fontconfig ttf-dejavu xvfb-run \
   linux-lts linux-firmware-intel gcompat
 
-# Wine is currently packaged for Alpine edge x86_64; keep it isolated inside Server Mode.
+# GUI compatibility runtimes. Chromium is the real JavaScript/WebRTC browser needed
+# by web applications such as Chrome Remote Desktop. It is deliberately kept in
+# Server Mode because the native framebuffer browser is not a JavaScript engine.
 proot -R $ROOT -b /proc:/proc -b /sys:/sys -b /dev:/dev /sbin/apk add --no-cache \
   --repository https://dl-cdn.alpinelinux.org/alpine/edge/main \
   --repository https://dl-cdn.alpinelinux.org/alpine/edge/community \
-  wine flatpak xdg-desktop-portal bubblewrap fuse3 shared-mime-info
+  wine flatpak xdg-desktop-portal bubblewrap fuse3 shared-mime-info \
+  chromium
 
 mkdir -p $ROOT/etc/steveos $ROOT/var/lib/tailscale $ROOT/opt/discord-bot $ROOT/var/lib/flatpak $ROOT/home/steve
 
@@ -56,6 +59,7 @@ TAILSCALE_AUTHKEY=
 TAILSCALE_ADVERTISE_ROUTES=
 TAILSCALE_EXIT_NODE=0
 SSH_ENABLE=0
+REMOTE_DESKTOP_ENABLE=1
 EOF
 
 cat > $ROOT/usr/local/bin/steveos-run-app <<'EOF'
@@ -127,6 +131,30 @@ set -eu
 exec /usr/local/bin/steveos-run-app "$@"
 EOF
 
+cat > $ROOT/usr/local/bin/steveos-remote-desktop <<'EOF'
+#!/bin/sh
+set -eu
+
+URL="https://remotedesktop.google.com/access"
+PROFILE=/home/steve/.config/chrome-remote-desktop
+mkdir -p "$PROFILE"
+
+# Chrome Remote Desktop is a JavaScript/WebRTC application. Launch the real
+# Chromium client rather than trying to render it through SteveOS's text browser.
+exec chromium \
+  --no-first-run \
+  --disable-dev-shm-usage \
+  --user-data-dir="$PROFILE" \
+  --app="$URL"
+EOF
+chmod +x $ROOT/usr/local/bin/steveos-remote-desktop
+
+cat > $ROOT/usr/local/bin/steveos-run-crd <<'EOF'
+#!/bin/sh
+set -eu
+exec /usr/local/bin/steveos-remote-desktop "$@"
+EOF
+chmod +x $ROOT/usr/local/bin/steveos-run-crd
 
 cat > $ROOT/init <<'EOF'
 #!/bin/sh
@@ -165,9 +193,6 @@ CONF=/etc/steveos/server.conf
 
 hostname "$SERVER_HOSTNAME" 2>/dev/null || true
 
-# Flatpak is provided by the Alpine edge community repository and uses Flathub.
-# Keep the remote configured inside Server Mode so the native GUI can hand off
-# installs without requiring a terminal.
 mkdir -p /var/lib/flatpak
 if command -v flatpak >/dev/null 2>&1; then
     flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo 2>/dev/null || true
@@ -218,127 +243,37 @@ start_tailscale() {
     [ "$TAILSCALE_ENABLE" = 1 ] || return 0
     modprobe tun 2>/dev/null || true
     mkdir -p /var/lib/tailscale /run/tailscale
-    if [ "$TAILSCALE_MODE" = userspace ]; then
-        tailscaled --tun=userspace-networking --socks5-server=localhost:1055 --outbound-http-proxy-listen=localhost:1056 --state=/var/lib/tailscale/tailscaled.state --socket=/run/tailscale/tailscaled.sock &
-    else
-        tailscaled --state=/var/lib/tailscale/tailscaled.state --socket=/run/tailscale/tailscaled.sock &
-    fi
-    for i in 1 2 3 4 5 6 7 8 9 10; do
-        [ -S /run/tailscale/tailscaled.sock ] && break
-        sleep 1
-    done
-    ARGS=
-    [ -n "$TAILSCALE_ADVERTISE_ROUTES" ] && ARGS="$ARGS --advertise-routes=$TAILSCALE_ADVERTISE_ROUTES"
-    [ "$TAILSCALE_EXIT_NODE" = 1 ] && ARGS="$ARGS --advertise-exit-node"
+    tailscaled --state=/var/lib/tailscale/tailscaled.state >/var/log/tailscaled.log 2>&1 &
+    sleep 2
     if [ -n "$TAILSCALE_AUTHKEY" ]; then
-        tailscale --socket=/run/tailscale/tailscaled.sock up \
-          --auth-key="$TAILSCALE_AUTHKEY" \
-          --hostname="$SERVER_HOSTNAME" $ARGS || true
-    else
-        echo "Tailscale enabled without an auth key. Run: tailscale up"
+        tailscale up --authkey="$TAILSCALE_AUTHKEY" ${TAILSCALE_ADVERTISE_ROUTES:+--advertise-routes="$TAILSCALE_ADVERTISE_ROUTES"} ${TAILSCALE_EXIT_NODE:+--advertise-exit-node} >/var/log/tailscale-up.log 2>&1 || true
     fi
 }
 
 start_discord() {
     [ "$DISCORD_ENABLE" = 1 ] || return 0
-    mkdir -p /opt/discord-bot
+    [ -d /opt/discord-bot ] || return 0
     cd /opt/discord-bot
-
-    if [ -n "$DISCORD_BOT_REPO" ] && [ ! -f package.json ] && [ ! -f requirements.txt ]; then
-        git clone --depth 1 "$DISCORD_BOT_REPO" /opt/discord-bot/repo
-        cp -a /opt/discord-bot/repo/. /opt/discord-bot/
-    fi
-
-    if [ -f package.json ]; then
-        npm install --omit=dev
-    elif [ -f requirements.txt ]; then
-        rm -rf /opt/discord-bot/.venv
-        python3 -m virtualenv --clear /opt/discord-bot/.venv
-        /opt/discord-bot/.venv/bin/pip install -r requirements.txt
-    fi
-
-    while true; do
-        if [ "$DISCORD_RUNTIME" = python ]; then
-            if [ -x /opt/discord-bot/.venv/bin/python ]; then
-                sh -c "$DISCORD_START" || true
-            else
-                sh -c "$DISCORD_START" || true
-            fi
-        else
-            sh -c "$DISCORD_START" || true
-        fi
-        sleep 2
-    done
+    if [ -f .env ]; then . ./.env; fi
+    if [ -n "$DISCORD_TOKEN" ]; then export DISCORD_TOKEN; fi
+    nohup sh -c "$DISCORD_START" >/var/log/discord-bot.log 2>&1 &
 }
 
 start_ssh() {
     [ "$SSH_ENABLE" = 1 ] || return 0
-    mkdir -p /run/sshd
-    ssh-keygen -A >/dev/null 2>&1 || true
-    /usr/sbin/sshd -D &
-}
-
-run_requested_app() {
-    [ -f /efi/SteveOS/Server/run-app.conf ] || return 0
-    APP_AUTORUN=$(sed -n 's/^APP_AUTORUN=//p' /efi/SteveOS/Server/run-app.conf 2>/dev/null | head -n1)
-    case "$APP_AUTORUN" in
-        /efi/SteveOS/Apps/*)
-            echo "Launching application: $APP_AUTORUN"
-            /usr/local/bin/steveos-run-app "$APP_AUTORUN" &
-            rm -f /efi/SteveOS/Server/run-app.conf
-            ;;
-        "") ;;
-        *) echo "Ignoring invalid application path" ;;
-    esac
+    ssh-keygen -A 2>/dev/null || true
+    /usr/sbin/sshd 2>/var/log/sshd.log || true
 }
 
 start_tailscale
+start_discord
 start_ssh
-start_discord &
-run_requested_app &
 
-echo "SteveOS Server Mode"
-ip -brief addr 2>/dev/null || true
-echo "Discord: $DISCORD_ENABLE"
-echo "Tailscale: $TAILSCALE_ENABLE"
-echo "SSH: $SSH_ENABLE"
-echo "Windows EXE runtime: Wine + Xvfb"
-echo "Linux applications: native ELF + AppImage + scripts"
-echo "Flatpak Store: Flathub enabled"
-echo "macOS applications: Darling bridge when installed"
-echo "Multimedia: FFmpeg + GStreamer + ALSA + PipeWire"
-echo "Camera: V4L2 /dev/video*"
-echo "Microphone: ALSA/PipeWire /dev/snd"
-{
-    echo "STEVEOS MEDIA STATUS"
-    echo "VIDEO:"
-    ls -1 /dev/video* 2>/dev/null || echo "NONE"
-    echo "AUDIO:"
-    ls -1 /dev/snd 2>/dev/null || echo "NONE"
-} > /efi/SteveOS/Server/media-status.txt 2>/dev/null || true
+echo "SteveOS Server Mode ready"
+if command -v chromium >/dev/null 2>&1; then
+    echo "Chrome Remote Desktop client: steveos-remote-desktop"
+fi
 
 exec /bin/sh
 EOF
-
 chmod +x $ROOT/init
-cp $ROOT/boot/vmlinuz-lts $WORK/vmlinuz-lts
-
-(
-  cd $ROOT
-  find . -xdev -print0 | cpio --null -o -H newc --quiet
-) | gzip -9 > $WORK/server-initramfs.img
-
-cat > $WORK/grub.cfg <<'EOF'
-set timeout=2
-set default=0
-search --file --set=root /SteveOS/Server/server-initramfs.img
-menuentry "SteveOS Server Mode" {
-    linux /SteveOS/Server/vmlinuz-lts
-    initrd /SteveOS/Server/server-initramfs.img
-}
-EOF
-
-grub-mkstandalone -O x86_64-efi -o $WORK/ServerBoot.efi \
-  "boot/grub/grub.cfg=$WORK/grub.cfg"
-
-echo "Server runtime built in $WORK"
