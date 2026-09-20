@@ -712,21 +712,45 @@ static void draw_advanced(void){
     text(42,(int)height-98,"ARROWS  •  F5 SAVE  •  7 CHECK UPDATE  •  8 INSTALL UPDATE  •  REBOOT AFTER INSTALL",sub_color(),1);taskbar();
 }
 static void draw_desktop(void){
-    panel();
-    text(28,72,"WELCOME",text_color(),3);
-    text(30,104,"A BIGGER NATIVE STEVEOS DESKTOP",sub_color(),1);
-    const char*names[]={"WEB BROWSER","CALCULATOR","TEXT EDITOR","FILE MANAGER","IMAGE VIEWER","SETTINGS","TASK MANAGER","TERMINAL","CALENDAR","CONTROL CENTER","ABOUT STEVEOS","SYSTEM INFORMATION","DEVICE MANAGER","INSTALLER","APP STORE","SERVER MANAGER","ADVANCED SETTINGS"};
-    const int ap[]={APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_IMAGE,APP_SETTINGS,APP_TASKS,APP_TERMINAL,APP_CALENDAR,APP_CONTROL,APP_ABOUT,APP_SYSINFO,APP_DEVICES,APP_INSTALLER,APP_STORE,APP_SERVER,APP_ADVANCED};
-    int cw=250,ch=80,g=14,x0=28,y0=132,cols=width>=1200?4:3;
-    for(int i=0;i<17;i++){
-        int col=i%cols,row=i/cols,x=x0+col*(cw+g),y=y0+row*(ch+g);
-        if(x+cw>(int)width-20)continue;
-        round_panel(x+3,y+4,cw,ch,0x05080Bu);round_panel(x,y,cw,ch,panel_color());
-        static const int desktop_icon_map[]={0,1,2,3,11,6,5,4,7,13,15,14,15,14,15,15,6};draw_icon(x+14,y+14,desktop_icon_map[i]);text(x+82,y+21,names[i],text_color(),1);
-        text(x+82,y+43,i==0?"REAL HTTP FIRMWARE BRIDGE":i==1?"INTEGER EXPRESSION ENGINE":i==2?"NVRAM TEXT EDITOR":i==3?"BOOT VOLUME EXPLORER":i==4?"BMP + BOOT IMAGE":i==5?"THEME + INPUT":i==6?"LIVE SYSTEM STATUS":i==7?"NATIVE COMMAND SHELL":i==8?"SYSTEM DATE + TIME":i==9?"HARDWARE CONTROL CENTER":i==10?"LICENSES + BUILD INFO":i==11?"CPU + MEMORY + FIRMWARE":i==12?"PCI HARDWARE ENUMERATION":i==13?"INSTALL TO EXISTING EFI VOLUME":i==14?"EFI + WINDOWS APP PACKAGES":i==15?"DISCORD + TAILSCALE SERVICES":"SERVER + BOOT RUNTIME CONTROLS",sub_color(),1);
-        if(ap[i]>=0)fill_rect(x+cw-24,y+17,7,7,(current_app==ap[i])?accent_color():panel2_color());
+    /* A real desktop: wallpaper, shortcuts and visible boot-volume files. */
+    for(int y=0;y<(int)height;y++){
+        uint32_t t=(uint32_t)((uint64_t)y*255u/(height?height:1));
+        uint32_t r=(12u+(t*8u)/255u),g=(28u+(t*18u)/255u),b=(52u+(t*30u)/255u);
+        uint32_t col=0xFF000000u|(r<<16)|(g<<8)|b;
+        fill_rect(0,y,(int)width,1,col);
     }
-    text(30,(int)height-82,"TRADITIONAL PANEL  •  KEYBOARD SHORTCUTS  •  NATIVE INPUT",sub_color(),1);
+    /* Soft desktop bands keep the wallpaper readable without hiding it. */
+    fill_rect(0,0,(int)width,76,0x22000000u);
+    fill_rect(0,76,(int)width,1,0x44000000u);
+
+    /* Desktop shortcuts, like a conventional PC desktop. */
+    const char*labels[]={"This PC","Home","Documents","Downloads","Trash","Settings"};
+    const int icons[]={15,3,2,3,4,6};
+    for(int i=0;i<6;i++){
+        int col=i/4,row=i%4,x=22+col*92,y=24+row*92;
+        draw_icon(x+14,y,icons[i]);
+        int tx=x+46-(int)strlen(labels[i])*3;
+        if(tx<2)tx=2;
+        round_panel(x,y+54,88,22,0x50000000u);
+        text(tx,y+61,labels[i],0xFFFFFFFFu,1);
+    }
+
+    /* Show real files from the boot volume as desktop objects. */
+    int shown=0;
+    for(uint64_t i=0;i<boot_info->boot_file_count&&shown<5;i++){
+        STEVEOS_BOOT_FILE*f=&boot_files[i];
+        if(!f->name||!f->name[0])continue;
+        int x=215+(shown%5)*118,y=26;
+        int icon=(f->kind==1)?11:(f->kind==4)?15:2;
+        draw_icon(x+22,y,icon);
+        round_panel(x,y+54,112,22,0x50000000u);
+        text_clip(x+8,y+61,f->name,0xFFFFFFFFu,1,96);
+        shown++;
+    }
+
+    text(220,92,"STEVEOS DESKTOP",0xFFFFFFFFu,2);
+    text(220,112,"Your files, apps and system tools",0xD8E4F0u,1);
+
     taskbar();
     if(menu_open)draw_start_menu();
 }
@@ -1517,6 +1541,18 @@ static void launch_app(int app){
     if(app==APP_SERVER){refresh_network_info();refresh_install_targets();if(server_runtime_detected())server_install_state=2;}if(app==APP_ADVANCED)refresh_network_info();if(app==APP_CONTROL)refresh_network_info();
     mark_dirty();
 }
+static int desktop_file_at(uint32_t x,uint32_t y,int*index){
+    int shown=0;
+    for(uint64_t i=0;i<boot_info->boot_file_count&&shown<5;i++){
+        STEVEOS_BOOT_FILE*f=&boot_files[i];
+        if(!f->name||!f->name[0])continue;
+        int bx=215+(shown%5)*118,by=26;
+        if(hit(x,y,bx,by,112,78)){*index=(int)i;return 1;}
+        shown++;
+    }
+    return 0;
+}
+
 static void app_click(uint32_t x,uint32_t y){
     if(power_menu){
         int w=300,h=154,px=(int)width-w-18,py=(int)height-54-h-12;
@@ -1532,6 +1568,20 @@ static void app_click(uint32_t x,uint32_t y){
         if(x>=84u&&x<516u&&((x-84u)%72u)<64u){int slot=(int)((x-84u)/72u);launch_app((int[]){APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_TERMINAL,APP_SETTINGS}[slot]);return;}
     }
     if(current_app!=APP_DESKTOP&&hit(x,y,(int)width-62,66,30,24)){current_app=APP_DESKTOP;menu_open=0;mark_dirty();return;}
+    if(current_app==APP_DESKTOP){
+        if(hit(x,y,22,24,88,76)||hit(x,y,22,116,88,76)){current_app=APP_FILES;menu_open=0;mark_dirty();return;}
+        if(hit(x,y,22,208,88,76)){current_app=APP_FILES;menu_open=0;file_filter=2;file_scroll=0;mark_dirty();return;}
+        if(hit(x,y,22,300,88,76)){current_app=APP_FILES;menu_open=0;file_filter=3;file_scroll=0;mark_dirty();return;}
+        if(hit(x,y,114,116,88,76)){current_app=APP_FILES;menu_open=0;mark_dirty();return;}
+        if(hit(x,y,114,300,88,76)){current_app=APP_SETTINGS;menu_open=0;mark_dirty();return;}
+        int fi=-1;
+        if(desktop_file_at(x,y,&fi)){STEVEOS_BOOT_FILE*f=&boot_files[fi];selected_file=fi;
+            if(f->kind==1)current_app=APP_IMAGE;
+            else if(f->kind==4&&boot_info->uefi_run_windows_app){RUNWINDOWSAPP fn=(RUNWINDOWSAPP)(uintptr_t)boot_info->uefi_run_windows_app;fn(f->name);}
+            else if(f->kind==2&&f->data){if(boot_name_is_html(f))browser_load_local_file(f);else load_text_file(f);}
+            mark_dirty();return;
+        }
+    }
     if(current_app==APP_CALC){int bw=100,bh=46,g=10,cols=5,x0=38,y0=204;const char*keys[]={"7","8","9","/","4","5","6","*","1","2","3","-","0","(",")","+","C","=","."};for(int i=0;i<19;i++){int bx=x0+(i%cols)*(bw+g),by=y0+(i/cols)*(bh+g);if(hit(x,y,bx,by,bw,bh)){char c=keys[i][0];if(c=='C'){calc_len=0;calc_input[0]=0;calc_has_result=0;}else if(c=='=')calc_eval();else if(calc_len<CALC_MAX){calc_input[calc_len++]=c;calc_input[calc_len]=0;calc_has_result=0;}mark_dirty();return;}}}
     else if(current_app==APP_FILES){
         for(int p=0;p<6;p++)if(hit(x,y,50,150+p*42,190,34)){file_filter=p;file_scroll=0;selected_file=-1;mark_dirty();return;}
