@@ -39,6 +39,7 @@ typedef uint64_t (__attribute__((ms_abi)) *RUNWINDOWSAPP)(const uint16_t*);
 typedef uint64_t (__attribute__((ms_abi)) *UPDATECHECK)(STEVEOS_UPDATE_INFO*);
 typedef uint64_t (__attribute__((ms_abi)) *UPDATEAPPLY)(void);
 typedef uint64_t (__attribute__((ms_abi)) *NETINFO)(STEVEOS_NETWORK_INFO*);
+typedef uint64_t (__attribute__((ms_abi)) *RESETSYSTEM)(uint64_t,uint64_t,uint64_t,void*);
 typedef struct { uint32_t magic; uint8_t light; uint8_t scale; uint8_t accent; uint8_t service_flags; uint8_t logging; uint8_t boot_delay; uint8_t reserved0; uint32_t reserved; } SETTINGS;
 
 typedef struct {
@@ -51,6 +52,9 @@ typedef struct {
 
 extern void native_reboot(void);
 extern void native_halt(void);
+extern void native_sleep(void);
+extern void native_power_init(const STEVEOS_BOOT_INFO*);
+extern int native_power_button_event(void);
 extern void native_pointer_set_scale(uint8_t);
 extern uint8_t native_keyboard_read_scancode(void);
 extern uint32_t native_pointer_x(void), native_pointer_y(void);
@@ -507,9 +511,9 @@ static void draw_power_menu(void){
     int w=300,h=154,x=(int)width-w-18,y=(int)height-54-h-12;
     fill_rect(x+4,y+4,w,h,0x05080Bu);fill_rect(x,y,w,h,panel_color());
     text(x+20,y+18,"SESSION",text_color(),2);text(x+20,y+46,"STEVEOS POWER",sub_color(),1);
-    fill_rect(x+20,y+72,76,44,danger_color());text(x+38,y+86,"HALT",0xFFFFFFu,1);
-    fill_rect(x+112,y+72,76,44,accent_dark());text(x+126,y+86,"REBOOT",0xFFFFFFu,1);
-    fill_rect(x+204,y+72,76,44,panel2_color());text(x+224,y+86,"CANCEL",text_color(),1);
+    fill_rect(x+20,y+72,76,44,panel2_color());text(x+38,y+86,"SLEEP",text_color(),1);
+    fill_rect(x+112,y+72,76,44,accent_dark());text(x+126,y+86,"RESTART",0xFFFFFFu,1);
+    fill_rect(x+204,y+72,76,44,danger_color());text(x+220,y+86,"SHUTDOWN",0xFFFFFFu,1);
 }
 static void window_bar(const char*title,const char*hint){
     fill_rect(18,58,(int)width-36,(int)height-128,panel_color());
@@ -1500,9 +1504,9 @@ static void launch_app(int app){
 static void app_click(uint32_t x,uint32_t y){
     if(power_menu){
         int w=300,h=154,px=(int)width-w-18,py=(int)height-54-h-12;
-        if(hit(x,y,px+20,py+72,76,44)){power_menu=0;native_halt();return;}
-        if(hit(x,y,px+112,py+72,76,44)){power_menu=0;native_reboot();return;}
-        if(hit(x,y,px+204,py+72,76,44)){power_menu=0;mark_dirty();return;}
+        if(hit(x,y,px+20,py+72,76,44)){power_menu=0;native_sleep();return;}
+        if(hit(x,y,px+112,py+72,76,44)){power_menu=0;if(boot_info->uefi_reset_system){RESETSYSTEM reset=(RESETSYSTEM)(uintptr_t)boot_info->uefi_reset_system;reset(1,0,0,NULL);}native_reboot();return;}
+        if(hit(x,y,px+204,py+72,76,44)){power_menu=0;if(boot_info->uefi_reset_system){RESETSYSTEM reset=(RESETSYSTEM)(uintptr_t)boot_info->uefi_reset_system;reset(2,0,0,NULL);}native_halt();return;}
         power_menu=0;mark_dirty();return;
     }
     if(y>=(uint32_t)height-54){
@@ -1749,7 +1753,7 @@ static void render(void){
 }
 
 void steveos_desktop_init(STEVEOS_BOOT_INFO *boot){
-    boot_info=boot;boot_files=(STEVEOS_BOOT_FILE*)(uintptr_t)boot->boot_files;framebuffer=(uint32_t*)(uintptr_t)boot->framebuffer_base;width=(uint32_t)boot->width;height=(uint32_t)boot->height;stride=(uint32_t)boot->pixels_per_scanline;memory_stats();init_backbuffer();load_settings();load_note();load_bookmarks();browser_tab_count=1;browser_current_tab=0;browser_tabs[0][0]=0;calc_input[0]=0;terminal_lines[0][0]=0;terminal_add("STEVEOS NATIVE SHELL");terminal_add("TYPE HELP FOR COMMANDS");browser_focus=0;dirty=1;}
+    boot_info=boot;native_power_init(boot);boot_files=(STEVEOS_BOOT_FILE*)(uintptr_t)boot->boot_files;framebuffer=(uint32_t*)(uintptr_t)boot->framebuffer_base;width=(uint32_t)boot->width;height=(uint32_t)boot->height;stride=(uint32_t)boot->pixels_per_scanline;memory_stats();init_backbuffer();load_settings();load_note();load_bookmarks();browser_tab_count=1;browser_current_tab=0;browser_tabs[0][0]=0;calc_input[0]=0;terminal_lines[0][0]=0;terminal_add("STEVEOS NATIVE SHELL");terminal_add("TYPE HELP FOR COMMANDS");browser_focus=0;dirty=1;}
 
 void steveos_desktop_run(STEVEOS_BOOT_INFO *boot){
     (void)boot;
@@ -1758,6 +1762,7 @@ void steveos_desktop_run(STEVEOS_BOOT_INFO *boot){
     uint32_t refresh_ticks=0;
     for(;;){
         if(apostrophe_pending){if(apostrophe_ticks)apostrophe_ticks--;else apostrophe_pending=0;}
+        if(native_power_button_event()){power_menu=1;menu_open=0;dirty=1;}
         uint8_t s=native_keyboard_read_scancode();if(s){handle_scan(s);dirty=1;}
         uint32_t x=native_pointer_x(),y=native_pointer_y();uint8_t b=native_pointer_buttons();
         if(x!=last_x||y!=last_y||b!=last_b){dirty=1;last_x=x;last_y=y;last_b=b;}
