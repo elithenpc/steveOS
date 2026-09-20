@@ -20,7 +20,10 @@ static void compat_launch_crd(void){
     if(!boot_info||!boot_info->uefi_write_text||!boot_info->uefi_launch_server){terminal_add("REMOTE DESKTOP SERVER UNAVAILABLE");return;}
     const char*cfg="REMOTE_DESKTOP_AUTORUN=1\\n";
     uint16_t path[64];size_t q=0;const char*wp="\\\\SteveOS\\\\Server\\\\remote-desktop.conf";
-    while(*wp&&q+1<sizeof(path)/sizeof(path[0]))path[q++]=(uint16_t)(unsigned char)*wp++;path[q]=0;
+    while(*wp&&q+1<sizeof(path)/sizeof(path[0])){
+        path[q++]=(uint16_t)(unsigned char)*wp++;
+    }
+    path[q]=0;
     WRITEFILE wr=(WRITEFILE)(uintptr_t)boot_info->uefi_write_text;
     if(wr(path,cfg,(uint64_t)(sizeof("REMOTE_DESKTOP_AUTORUN=1\\n")-1))!=0){terminal_add("REMOTE DESKTOP REQUEST FAILED");return;}
     LAUNCHSERVER launch=(LAUNCHSERVER)(uintptr_t)boot_info->uefi_launch_server;
@@ -39,7 +42,7 @@ static void compat_launch_crd(void){
              'size_t n=0;while(p[n]&&n+1<BROWSER_URL_MAX){browser_url[n]=p[n];n++;}'
              'browser_url[n]=0;current_app=APP_BROWSER;browser_focus=0;browser_fetch();mark_dirty();return;}}'
              'else if(current_app==APP_SERVER){')
-    replacement = ('if(hit(x,y,42,446,(int)width-84,42)){const char*p="http://flathub.org/";'
+    replacement = ('if(hit(x,y,42,446,(int)width-84,42)){const char*p="https://flathub.org/";'
                    'size_t n=0;while(p[n]&&n+1<BROWSER_URL_MAX){browser_url[n]=p[n];n++;}'
                    'browser_url[n]=0;current_app=APP_BROWSER;browser_focus=0;browser_fetch();mark_dirty();return;}'
                    'if(hit(x,y,42,498,(int)width-84,42)){compat_launch_crd();mark_dirty();return;}}'
