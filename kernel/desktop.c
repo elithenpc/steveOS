@@ -128,7 +128,7 @@ static char browser_tabs[4][BROWSER_URL_MAX+1];
 static uint8_t browser_bookmark_count;
 static char browser_bookmarks[8][BROWSER_URL_MAX+1];
 static uint8_t ctrl_down,alt_down;
-static uint8_t mouse_keyboard_mode,apostrophe_pending;
+static uint8_t mouse_keyboard_mode,apostrophe_pending,extended_scancode;
 static uint16_t apostrophe_ticks;
 static uint8_t shift_down;
 static uint8_t dirty=1;
@@ -1733,6 +1733,18 @@ static void mouse_keyboard_click(void){
 
 static void handle_scan(uint8_t s){
     if(!s)return;
+    if(s==0xE0){extended_scancode=1;return;}
+    if(extended_scancode){
+        extended_scancode=0;
+        if(s==0x5B||s==0x5C){
+            menu_open=1;
+            power_menu=0;
+            menu_search_len=0;
+            menu_search[0]=0;
+            mark_dirty();
+            return;
+        }
+    }
     if(s==0x28){
         if(apostrophe_pending&&apostrophe_ticks){
             mouse_keyboard_mode^=1;
