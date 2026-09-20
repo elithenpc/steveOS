@@ -179,6 +179,20 @@ static uint32_t danger_color(void){return light_theme?0xB64A4Au:0xE27F80u;}
 static uint32_t good_color(void){return light_theme?0x3E8A50u:0x88CF98u;}
 
 static void mark_dirty(void){dirty=1;}
+static void round_rect(int x,int y,int w,int h,int r,uint32_t col){
+    if(w<=0||h<=0)return;
+    if(r<1)r=1;
+    if(r*2>w)r=w/2;
+    if(r*2>h)r=h/2;
+    for(int yy=0;yy<h;yy++){
+        int inset=0;
+        if(yy<r){int dy=r-1-yy;inset=r-(int)__builtin_sqrt((double)(r*r-dy*dy));}
+        else if(yy>=h-r){int dy=yy-(h-r);inset=r-(int)__builtin_sqrt((double)(r*r-dy*dy));}
+        fill_rect(x+inset,y+yy,w-inset*2,1,col);
+    }
+}
+static void round_panel(int x,int y,int w,int h,uint32_t col){round_rect(x,y,w,h,12,col);}
+static void draw_icon(int x,int y,int type);
 static void fill_rect(int x,int y,int w,int h,uint32_t c){
     if(!backbuffer||w<=0||h<=0)return;
     int x0=x<0?0:x,y0=y<0?0:y,x1=x+w,y1=y+h;
@@ -494,16 +508,16 @@ static void taskbar(void){
     int h=54,y=(int)height-h;
     fill_rect(0,y,(int)width,h,light_theme?0xD5DCE1u:0x161D26u);
     fill_rect(0,y,(int)width,1,light_theme?0xBAC4CBu:0x2A3643u);
-    fill_rect(12,y+8,58,38,menu_open?accent_dark():accent_color());
+    round_panel(12,y+8,58,38,menu_open?accent_dark():accent_color());
     text(25,y+20,"MENU",0xFFFFFFu,1);
-    const char*icons[]={"WEB","CALC","NOTE","FILES","TERM","SET"};
+    const int icon_ids[]={0,1,2,3,4,6};
     const int apps[]={APP_BROWSER,APP_CALC,APP_EDITOR,APP_FILES,APP_TERMINAL,APP_SETTINGS};
     for(int i=0;i<6;i++){
-        int x=84+i*72;fill_rect(x,y+8,64,38,(current_app==apps[i])?panel2_color():panel_color());
-        text(x+10,y+20,icons[i],text_color(),1);
+        int x=84+i*72;round_panel(x,y+8,64,38,(current_app==apps[i])?panel2_color():panel_color());
+        draw_icon(x+6,y+1,icon_ids[i]);
     }
     text((int)width-154,y+20,update_info.available?"UPDATE READY":"STEVEOS",update_info.available?danger_color():sub_color(),1);
-    fill_rect((int)width-76,y+8,64,38,power_menu?accent_dark():panel_color());
+    round_panel((int)width-76,y+8,64,38,power_menu?accent_dark():panel_color());
     text((int)width-64,y+20,"POWER",text_color(),1);
 }
 static void draw_power_menu(void){
@@ -516,10 +530,10 @@ static void draw_power_menu(void){
     fill_rect(x+204,y+72,76,44,danger_color());text(x+220,y+86,"SHUTDOWN",0xFFFFFFu,1);
 }
 static void window_bar(const char*title,const char*hint){
-    fill_rect(18,58,(int)width-36,(int)height-128,panel_color());
-    fill_rect(18,58,(int)width-36,40,panel2_color());
+    round_panel(18,58,(int)width-36,(int)height-128,panel_color());
+    round_rect(18,58,(int)width-36,40,12,panel2_color());
     text(34,72,title,text_color(),1);text_clip((int)width-260,72,hint,sub_color(),1,215);
-    fill_rect((int)width-62,66,30,24,danger_color());text((int)width-52,74,"X",0xFFFFFFu,1);
+    round_panel((int)width-62,66,30,24,danger_color());text((int)width-52,74,"X",0xFFFFFFu,1);
 }
 
 static int mint_icon_info(int type,const uint8_t**pixels,uint16_t*w,uint16_t*h){
@@ -586,20 +600,20 @@ static int menu_filtered_app(int visible){
 }
 static void draw_start_menu(void){
     int mw=430,mh=(int)height-76,x=12,y=(int)height-62-mh;
-    fill_rect(x+4,y+4,mw,mh,0x06090Du);fill_rect(x,y,mw,mh,panel_color());
+    round_panel(x+4,y+4,mw,mh,0x06090Du);round_panel(x,y,mw,mh,panel_color());
     text(x+22,y+20,"STEVEOS APPLICATIONS",text_color(),2);
-    text(x+22,y+48,"MINT-STYLE DESKTOP",sub_color(),1);
+    text(x+22,y+48,"APPLICATIONS AND TOOLS",sub_color(),1);
     fill_rect(x+18,y+60,mw-36,30,panel2_color());
     text(x+30,y+70,menu_search[0]?menu_search:"SEARCH APPLICATIONS",menu_search[0]?text_color():sub_color(),1);
     int shown=0;
     for(int i=0;i<17;i++)if(contains_ci(menu_names[i],menu_search)){
         int row=shown%9,col=shown/9,bx=x+18+col*196,by=y+98+row*55;
-        fill_rect(bx,by,180,45,(current_app==menu_apps[i])?panel2_color():bg_color());
+        round_panel(bx,by,180,45,(current_app==menu_apps[i])?panel2_color():bg_color());
         static const int icon_map[]={0,1,2,3,7,6,5,4,7,7,7,6,15,14,15,15,6};draw_icon(bx+5,by-4,icon_map[i]);
         text(bx+66,by+12,menu_names[i],text_color(),1);
         shown++;
     }
-    fill_rect(x+18,y+mh-44,mw-36,28,panel2_color());
+    round_panel(x+18,y+mh-44,mw-36,28,panel2_color());
     text(x+30,y+mh-36,menu_search[0]?"TYPE TO FILTER  ENTER LAUNCH  ESC CLOSE":"TYPE TO SEARCH  ENTER LAUNCH",sub_color(),1);
 }
 
@@ -705,12 +719,12 @@ static void draw_desktop(void){
     for(int i=0;i<17;i++){
         int col=i%cols,row=i/cols,x=x0+col*(cw+g),y=y0+row*(ch+g);
         if(x+cw>(int)width-20)continue;
-        fill_rect(x+3,y+4,cw,ch,0x05080Bu);fill_rect(x,y,cw,ch,panel_color());
+        round_panel(x+3,y+4,cw,ch,0x05080Bu);round_panel(x,y,cw,ch,panel_color());
         static const int desktop_icon_map[]={0,1,2,3,11,6,5,4,7,13,15,14,15,14,15,15,6};draw_icon(x+14,y+14,desktop_icon_map[i]);text(x+82,y+21,names[i],text_color(),1);
         text(x+82,y+43,i==0?"REAL HTTP FIRMWARE BRIDGE":i==1?"INTEGER EXPRESSION ENGINE":i==2?"NVRAM TEXT EDITOR":i==3?"BOOT VOLUME EXPLORER":i==4?"BMP + BOOT IMAGE":i==5?"THEME + INPUT":i==6?"LIVE SYSTEM STATUS":i==7?"NATIVE COMMAND SHELL":i==8?"SYSTEM DATE + TIME":i==9?"HARDWARE CONTROL CENTER":i==10?"LICENSES + BUILD INFO":i==11?"CPU + MEMORY + FIRMWARE":i==12?"PCI HARDWARE ENUMERATION":i==13?"INSTALL TO EXISTING EFI VOLUME":i==14?"EFI + WINDOWS APP PACKAGES":i==15?"DISCORD + TAILSCALE SERVICES":"SERVER + BOOT RUNTIME CONTROLS",sub_color(),1);
         if(ap[i]>=0)fill_rect(x+cw-24,y+17,7,7,(current_app==ap[i])?accent_color():panel2_color());
     }
-    text(30,(int)height-82,"TRADITIONAL PANEL  •  KEYBOARD SHORTCUTS  •  NATIVE INPUT  •  MINT-INSPIRED VISUALS",sub_color(),1);
+    text(30,(int)height-82,"TRADITIONAL PANEL  •  KEYBOARD SHORTCUTS  •  NATIVE INPUT",sub_color(),1);
     taskbar();
     if(menu_open)draw_start_menu();
 }
@@ -1400,7 +1414,7 @@ static void draw_control(void){
     const char*names[]={"Display","Input Devices","Network","Storage","Memory","Firmware","Boot Volume","Open-Source Components","Server Runtime"};
     for(int i=0;i<9;i++){
         int col=i%2,row=i/2,x=42+col*300,y=114+row*76;
-        fill_rect(x,y,280,60,panel_color());
+        round_panel(x,y,280,60,panel_color());
         text(x+18,y+14,names[i],text_color(),1);
         if(i==0)text(x+18,y+35,"UEFI GOP FRAMEBUFFER",sub_color(),1);
         else if(i==1)text(x+18,y+35,native_usb_mouse_present()?"USB MOUSE ACTIVE":"PS2/TOUCHPAD INPUT",sub_color(),1);
@@ -1409,7 +1423,7 @@ static void draw_control(void){
         else if(i==4)text(x+18,y+35,"RAM MAP AVAILABLE",sub_color(),1);
         else if(i==5)text(x+18,y+35,"RUNTIME SERVICES",sub_color(),1);
         else if(i==6)text(x+18,y+35,"FAT BOOT VOLUME",sub_color(),1);
-        else if(i==7)text(x+18,y+35,"MINT-Y + CINNAMON REFERENCES",sub_color(),1);
+        else if(i==7)text(x+18,y+35,"OPEN-SOURCE COMPONENTS",sub_color(),1);
         else text(x+18,y+35,"DISCORD / TAILSCALE RUNTIME",sub_color(),1);
         if(i==2&&network_info_valid){char mac[24];mac_text(mac,sizeof(mac));text(x+18,y+50,mac,accent_color(),1);}
     }
