@@ -1,5 +1,9 @@
 name: Publish SteveOS Latest
 
+concurrency:
+  group: steveos-latest-release
+  cancel-in-progress: true
+
 on:
   push:
     branches: [main]
