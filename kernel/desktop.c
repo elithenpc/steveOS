@@ -60,7 +60,7 @@ extern uint8_t native_keyboard_read_scancode(void);
 extern uint32_t native_pointer_x(void), native_pointer_y(void);
 extern uint8_t native_pointer_buttons(void);
 extern void native_pointer_move(int32_t,int32_t,uint8_t);
-extern void native_pointer_hide(void), native_pointer_show(void), native_pointer_refresh(void);
+extern void native_pointer_hide(void), native_pointer_show(void);
 extern int native_usb_mouse_present(void), native_i2c_hid_present(void);
 extern const unsigned char _binary_build_boot_raw_start[], _binary_build_boot_raw_end[];
 extern const unsigned char _binary_build_mint_icons_raw_start[], _binary_build_mint_icons_raw_end[];
@@ -1830,7 +1830,8 @@ static void render(void){
         stroke_rect(12,12,190,30,accent_color());
         text(22,20,"ARROW MOUSE ON",accent_color(),1);
     }
-    present();\n    native_pointer_refresh();\n    dirty=0;
+    present();
+    dirty=0;
 }
 
 void steveos_desktop_init(STEVEOS_BOOT_INFO *boot){
@@ -1846,7 +1847,7 @@ void steveos_desktop_run(STEVEOS_BOOT_INFO *boot){
         if(native_power_button_event()){power_menu=1;menu_open=0;dirty=1;}
         uint8_t s=native_keyboard_read_scancode();if(s){handle_scan(s);dirty=1;}
         uint32_t x=native_pointer_x(),y=native_pointer_y();uint8_t b=native_pointer_buttons();
-        if(x!=last_x||y!=last_y||b!=last_b){dirty=1;last_x=x;last_y=y;last_b=b;}
+        if(x!=last_x||y!=last_y||b!=last_b){native_pointer_hide();last_x=x;last_y=y;last_b=b;native_pointer_show();dirty=1;}
         if((b&1)&&!(previous_buttons&1)){if(menu_open)menu_click(x,y);else app_click(x,y);dirty=1;}
         previous_buttons=b;
         if(++refresh_ticks>=8000){refresh_ticks=0;refresh_network_info();if(!update_checked)refresh_update_info();dirty=1;}
