@@ -60,7 +60,7 @@ extern uint8_t native_keyboard_read_scancode(void);
 extern uint32_t native_pointer_x(void), native_pointer_y(void);
 extern uint8_t native_pointer_buttons(void);
 extern void native_pointer_move(int32_t,int32_t,uint8_t);
-extern void native_pointer_hide(void), native_pointer_show(void);
+extern void native_pointer_hide(void), native_pointer_show(void), native_pointer_refresh(void);
 extern int native_usb_mouse_present(void), native_i2c_hid_present(void);
 extern const unsigned char _binary_build_boot_raw_start[], _binary_build_boot_raw_end[];
 extern const unsigned char _binary_build_mint_icons_raw_start[], _binary_build_mint_icons_raw_end[];
@@ -1830,7 +1830,7 @@ static void render(void){
         stroke_rect(12,12,190,30,accent_color());
         text(22,20,"ARROW MOUSE ON",accent_color(),1);
     }
-    present();dirty=0;
+    present();\n    native_pointer_refresh();\n    dirty=0;
 }
 
 void steveos_desktop_init(STEVEOS_BOOT_INFO *boot){
