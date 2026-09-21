@@ -447,8 +447,17 @@ static BOOLEAN steveos_is_efi_name(const CHAR16 *name){
            (name[n-1]==L'i'||name[n-1]==L'I');
 }
 static BOOLEAN steveos_is_windows_app_name(const CHAR16 *name){
-    return name && (has_ext(name,L".exe")||has_ext(name,L".com")||has_ext(name,L".bat")||
-                    has_ext(name,L".cmd")||has_ext(name,L".js")||has_ext(name,L".py")||has_ext(name,L".sh"));
+    if(!name)return FALSE;
+    UINTN n=0;while(name[n])n++;
+    if(n<4||name[n-4]!=L'.')return FALSE;
+    CHAR16 a=name[n-3],b=name[n-2],c=name[n-1];
+    if(a>=L'A'&&a<=L'Z')a=(CHAR16)(a-L'A'+L'a');
+    if(b>=L'A'&&b<=L'Z')b=(CHAR16)(b-L'A'+L'a');
+    if(c>=L'A'&&c<=L'Z')c=(CHAR16)(c-L'A'+L'a');
+    return (a==L'e'&&b==L'x'&&c==L'e')||(a==L'c'&&b==L'o'&&c==L'm')||
+           (a==L'b'&&b==L'a'&&c==L't')||(a==L'c'&&b==L'm'&&c==L'd')||
+           (a==L'j'&&b==L's'&&c==L' ')||(a==L'p'&&b==L'y'&&c==L' ')||
+           (a==L's'&&b==L'h'&&c==L' ');
 }
 static BOOLEAN steveos_is_windows_safe_name(const CHAR16 *name){
     if(!name||!name[0])return FALSE;
