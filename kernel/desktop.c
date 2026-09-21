@@ -189,8 +189,8 @@ static void round_rect(int x,int y,int w,int h,int r,uint32_t col){
     if(r*2>h)r=h/2;
     for(int yy=0;yy<h;yy++){
         int inset=0;
-        if(yy<r)inset=inset12[r-yy];
-        else if(yy>=h-r)inset=inset12[yy-(h-r)+1];
+        if(yy<r)inset=inset12[(yy*12)/r];
+        else if(yy>=h-r)inset=inset12[((h-1-yy)*12)/r];
         fill_rect(x+inset,y+yy,w-inset*2,1,col);
     }
 }
