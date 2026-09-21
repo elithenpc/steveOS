@@ -129,7 +129,7 @@ static uint8_t browser_bookmark_count;
 static char browser_bookmarks[8][BROWSER_URL_MAX+1];
 static uint8_t ctrl_down,alt_down;
 static uint8_t mouse_keyboard_mode,apostrophe_pending,extended_scancode;
-static uint16_t apostrophe_ticks;
+static uint32_t apostrophe_ticks;
 static uint8_t shift_down;
 static uint8_t dirty=1;
 
@@ -195,6 +195,7 @@ static void round_rect(int x,int y,int w,int h,int r,uint32_t col){
 }
 static void round_panel(int x,int y,int w,int h,uint32_t col){round_rect(x,y,w,h,12,col);}
 static void draw_icon(int x,int y,int type);
+static void fill_rect(int x,int y,int w,int h,uint32_t c);
 static void fill_rect(int x,int y,int w,int h,uint32_t c){
     if(!backbuffer||w<=0||h<=0)return;
     int x0=x<0?0:x,y0=y<0?0:y,x1=x+w,y1=y+h;
@@ -729,7 +730,7 @@ static void draw_desktop(void){
     for(int i=0;i<6;i++){
         int col=i/4,row=i%4,x=22+col*92,y=24+row*92;
         draw_icon(x+14,y,icons[i]);
-        int tx=x+46-(int)strlen(labels[i])*3;
+        int tx=x+46-(int)(i==0?7:i==1?4:i==2?10:i==3?9:i==4?5:8)*3;
         if(tx<2)tx=2;
         round_panel(x,y+54,88,22,0x50000000u);
         text(tx,y+61,labels[i],0xFFFFFFFFu,1);
@@ -739,12 +740,14 @@ static void draw_desktop(void){
     int shown=0;
     for(uint64_t i=0;i<boot_info->boot_file_count&&shown<5;i++){
         STEVEOS_BOOT_FILE*f=&boot_files[i];
-        if(!f->name||!f->name[0])continue;
+        if(!f->name[0])continue;
         int x=215+(shown%5)*118,y=26;
         int icon=(f->kind==1)?11:(f->kind==4)?15:2;
         draw_icon(x+22,y,icon);
         round_panel(x,y+54,112,22,0x50000000u);
-        text_clip(x+8,y+61,f->name,0xFFFFFFFFu,1,96);
+        char desktop_name[STEVEOS_BOOT_FILE_NAME_MAX];
+            file_name(f,desktop_name,sizeof(desktop_name));
+            text_clip(x+8,y+61,desktop_name,0xFFFFFFFFu,1,96);
         shown++;
     }
 
@@ -1753,7 +1756,7 @@ static void handle_scan(uint8_t s){
             mark_dirty();
         }else{
             apostrophe_pending=1;
-            apostrophe_ticks=800000;
+            apostrophe_ticks=800000u;
         }
         return;
     }
