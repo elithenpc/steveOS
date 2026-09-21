@@ -179,6 +179,7 @@ static uint32_t danger_color(void){return light_theme?0xB64A4Au:0xE27F80u;}
 static uint32_t good_color(void){return light_theme?0x3E8A50u:0x88CF98u;}
 
 static void mark_dirty(void){dirty=1;}
+static void fill_rect(int x,int y,int w,int h,uint32_t c);
 static void round_rect(int x,int y,int w,int h,int r,uint32_t col){
     static const uint8_t inset12[13]={12,8,6,5,4,3,2,1,1,1,0,0,0};
     if(w<=0||h<=0)return;
@@ -195,7 +196,6 @@ static void round_rect(int x,int y,int w,int h,int r,uint32_t col){
 }
 static void round_panel(int x,int y,int w,int h,uint32_t col){round_rect(x,y,w,h,12,col);}
 static void draw_icon(int x,int y,int type);
-static void fill_rect(int x,int y,int w,int h,uint32_t c);
 static void fill_rect(int x,int y,int w,int h,uint32_t c){
     if(!backbuffer||w<=0||h<=0)return;
     int x0=x<0?0:x,y0=y<0?0:y,x1=x+w,y1=y+h;
