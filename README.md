@@ -29,7 +29,7 @@ The native desktop includes:
 
 Networking is deliberately not probed during early boot. Web requests are on-demand from the desktop so firmware networking is only entered when the user asks the browser to load a page.
 
-GitHub Actions builds `BOOTX64.EFI`, a 512 MiB FAT32 `steveOS.img`, and a rolling `latest` GitHub release used by the native Update Centre.
+GitHub Actions builds `BOOTX64.EFI`, a 1900 MiB FAT32 `steveOS.img`, and a rolling `latest` GitHub release used by the native Update Centre.
 
 ## Mint integration
 
